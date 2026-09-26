@@ -14,7 +14,7 @@ queueing of the modelled disk.
 
 ### `hdd`: single-actuator hard disk
 
-What it models (see the header of `hdd.c`):
+What it models (see the header of `hdd_model.c`):
 
 - one actuator: requests are served one at a time,
   shortest-positioning-time-first among the oldest `ncq` waiting ones
@@ -69,7 +69,8 @@ rate, 6 Gb/s SATA, 256 MB buffer. How much of the buffer caches writes
 isn't published; 64 MiB is an assumption.
 
 Calibration of `hgst-7k8` (`bench/calibrate.sh 30`, kernel 6.17, 4 GiB
-device, so seeks span the full stroke):
+device, so seeks span the full stroke; one run, the latest checked run
+is in [docs/VALIDATION.md](docs/VALIDATION.md)):
 
 | test | model | reference |
 |---|---|---|
@@ -87,7 +88,7 @@ device, so seeks span the full stroke):
 
 ### `ssd`: flash SSD, SATA or NVMe
 
-What it models (see the header of `ssd.c`):
+What it models (see the header of `ssd_model.c`):
 
 - flash dies with their own timelines: a page read takes `tr_us` on its
   die (die = page number mod `dies`) plus the channel transfer, and waits
@@ -147,18 +148,22 @@ polling, floor measured 15.8–16.4 µs, 4 GiB device):
 | test | `sata-plp` | `nvme-plp` | `sata-consumer` | reference (spec / measured) |
 |---|---|---|---|---|
 | 4K random read QD1 | 121 µs | 82 µs | 79 µs | 120 / 80 / 77 µs |
-| 4K random read QD32 | 96K | 184K (QD128 191K) | 96K | 98K / 850K / 98K |
-| 128K sequential read QD32 | 553 MB/s | 4070 MB/s | 553 MB/s | 550 / 6800 / 560 |
+| 4K random read QD32 | 96K | 197K (QD128 212K) | 96K | 98K / 850K / 98K |
+| 128K sequential read QD32 | 553 MB/s | 4086 MB/s | 553 MB/s | 550 / 6800 / 560 |
 | 128K sequential write QD32 | 553 MB/s | 2535 MB/s | 553 MB/s | 520 / 2700 / 530 |
 | 4K random write QD1 | 42 µs | 23 µs | 11.8K IOPS | 40 / 30 (14.3 measured) µs / – |
-| 4K random write QD32, steady | 24.6K | 119.5K | 11.7K | 25K / 130K / ~12K |
-| 4K random write + fsync QD1 | 14.4K/s | 32.8K/s | 261/s | 15.5K / 70K / 248–311 |
+| 4K random write QD32, steady | 24.6K | 124K | 11.7K | 25K / 130K / ~12K |
+| 4K random write + fsync QD1 | 14.4–14.6K/s | 32.8–34K/s | 260–264/s | 15.5K / 70K / 248–311 |
 | 4K read QD1 next to a write + fsync job | 4.8K, p99 0.77 ms | 7.0K | 519, p50 3.6 ms | |
 
-NVMe numbers above ~190K IOPS or ~4 GB/s are the limit of one server
+NVMe numbers above ~200K IOPS or ~4 GB/s are the limit of one server
 thread, not the model. A request can't complete faster than the floor
 (16 µs here, ~35 µs without halt polling): the PM9A3 acknowledges a
-synced write in 14 µs, the model at ~23 µs.
+synced write in 14 µs, the model at ~22 µs.
+
+How these numbers were checked, what else is tested (model tests, data
+integrity, delivered timing, real drives), and where the models stop
+being valid: [docs/VALIDATION.md](docs/VALIDATION.md).
 
 ## Build and run
 
@@ -166,6 +171,7 @@ Needs a kernel with `ublk_drv` (6.0+; tested on 6.17) and liburing headers.
 
 ```bash
 make
+make check      # model tests on a virtual clock; no root, no ublk
 sudo modprobe ublk_drv
 # backing store: any block device or file that takes O_DIRECT I/O
 sudo ./kublk add -t hdd -q 1 -d 32 --profile hgst-7k8 /dev/<ram-backed-dev>
@@ -179,11 +185,21 @@ thread) and queue depth 32 to match SATA NCQ, 128 for NVMe.
 
 `bench/calibrate.sh` (hdd) and `bench/calibrate_ssd.sh` (ssd; measures
 the host's floor first) run fio micro-benchmarks (random/sequential reads
-and writes, cached and synced writes, a reader next to a flushing writer)
-on a fresh device backed by a 4 GiB null_blk and print one line per job.
+and writes, cached and synced writes, readers next to flushing and
+caching writers) on a fresh device backed by a 4 GiB null_blk, print one
+line per job, and with a stock profile check the results against
+`bench/expect/`. `bench/integrity.sh` verifies that data reads back
+intact on every target and cache mode.
 
-Step-by-step setup, using it under other software, the stats file, and
-fitting the model to another drive: [docs/GUIDE.md](docs/GUIDE.md).
+Documentation:
+
+- [docs/GUIDE.md](docs/GUIDE.md): step-by-step setup, using it under
+  other software, the stats file, fitting a model to another drive;
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works, the model
+  interface, invariants, adding a target;
+- [docs/VALIDATION.md](docs/VALIDATION.md): the evidence and its limits;
+- [CHANGELOG.md](CHANGELOG.md): model changes and which results they
+  affect.
 
 ## Layout
 
@@ -191,11 +207,12 @@ fitting the model to another drive: [docs/GUIDE.md](docs/GUIDE.md).
 |---|---|
 | `kublk.c`, `kublk.h`, `utils.h`, `ublk_dep.h`, `common.c`, `null.c`, `file_backed.c`, `fault_inject.c`, `stripe.c` | linux v6.17 selftests, small changes marked in git history |
 | `include/linux/ublk_cmd.h` | linux v6.17 uapi, overrides older distro headers |
-| `hdd.c`, `ssd.c`, `bench/`, `docs/` | this project |
+| `hdd.c`, `ssd.c`, `model_kublk.[ch]`, `model.h`, `hdd_model.[ch]`, `ssd_model.[ch]`, `tests/`, `bench/`, `docs/` | this project |
 
 `stripe.c` is not built: it needs io_uring opcodes newer than Ubuntu
 24.04's liburing 2.5 headers.
 
 ## License
 
-GPL-2.0 (kublk selftests, `hdd.c` and `ssd.c`); `kublk.c` itself is MIT.
+GPL-2.0 (kublk selftests and this project's files); `kublk.c` itself is
+MIT.

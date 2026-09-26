@@ -16,11 +16,13 @@ the model did, and fit it to a drive you care about.
 
 ```bash
 make            # produces ./kublk
+make check      # model tests on a virtual clock (no root, no ublk)
 ./kublk help    # all targets and their options
 ```
 
 `stripe.c` is not built (it needs io_uring opcodes newer than liburing
-2.5); everything else from the kernel selftest server is.
+2.5); everything else from the kernel selftest server is. How the pieces
+fit together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 3. Bring up a disk
 
@@ -120,6 +122,15 @@ With `--stats FILE`, the model rewrites FILE once a second:
 | `cache_full_waits` | writes that had to wait for cache space |
 | `blocked_by_flush`, `blocked_ms_sum` | requests held back by a flush in progress, and for how long |
 | `dirty_mb` | dirty data right now |
+| `completions` | requests completed (both targets) |
+| `late_us_p50`, `late_us_p99`, `late_us_p999`, `late_us_max` | how late completions fired against the model's schedule, µs (both targets) |
+
+The `late_us_*` lines say how faithfully this host delivers the model's
+timing; the model's own numbers are exact, the host only adds this.
+Quantiles are the upper edges of 1/16-octave buckets (at most ~4.4%
+high). A p99 of tens of µs is normal; hundreds of µs on an SSD profile
+means the server thread is at its limit or the host is busy. See
+[VALIDATION.md](VALIDATION.md).
 
 The kernel's own counters for the device are in
 `/sys/block/ublkbN/stat`; field 16 is flushes completed, field 17 the
@@ -157,7 +168,10 @@ To imitate another drive:
 3. Run `calibrate.sh` and compare: random QD1 checks seek + rotation,
    sequential checks the transfer rate, random QD32 checks reordering,
    write + fsync checks the flush path.
-4. Add a profile to `profiles[]` in `hdd.c` once it fits.
+4. Add a profile to `profiles[]` in `hdd_model.c` once it fits, and its
+   expected values to `bench/expect/<profile>.tsv`: with a stock
+   profile, `calibrate.sh` checks the run against that file and exits
+   non-zero if a number is out of tolerance.
 
 `--stroke` scales seek distances: a small device models a small span of
 a big disk. Leave it at 1.0 if the software spreads data over the whole
@@ -165,11 +179,11 @@ device.
 
 ## 7. Limits and gotchas
 
-- One thread. The destage scan is linear in the number of dirty extents
-  (up to 16k with a 64 MiB cache of 4K writes); fine for one device per
-  core.
+- One thread per device: ~200K 4K IOPS and ~4 GB/s at most.
 - No data persistence: the backing is RAM. Power-loss behaviour is not
   modelled; for crash tests, stack `dm-log-writes` on top and replay.
+  `bench/integrity.sh` checks that data reads back as written on every
+  target and cache mode.
 - One transfer rate and one track size for the whole disk (no zones), no
   read cache beyond sequential read-ahead, no firmware cap on dirty data
   (on the 4 GiB calibration device, a flush after filling 64 MiB with
@@ -255,12 +269,13 @@ to a fsyncing writer.
 
 To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
 write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the
-QD32 random read IOPS, `dies` · page / `tprog_us` to the sequential
-write rate, and `waf` to the steady-state (full drive) random write
+QD32 random read IOPS, `dies` · page / (`tprog_us` + page / `ch_mbps`)
+to the sequential write rate, and `waf` to the steady-state (full drive) random write
 IOPS. `flush_us` comes from a measured 4K write + fsync at QD1, which
 Ceph users publish for many drives. Start from the nearest `--profile`
 and override what differs (kublk takes at most 15 target options), then
-add a profile to `profiles[]` in `ssd.c`.
+add a profile to `profiles[]` in `ssd_model.c` and its expected values
+to `bench/expect/<profile>.tsv`.
 
 Limits: a first-order model. No garbage collection as a process (the
 `waf` factor charges it to the writes that cause it, at steady state),
