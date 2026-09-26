@@ -80,19 +80,20 @@ What it models (see the header of `ssd.c`):
 - flash dies with their own timelines: a page read takes `tr_us` on its
   die (die = page number mod `dies`) plus the channel transfer, and waits
   for whatever that die is doing, a program included;
-- a host link (`iface_mbps`, plus `cmd_us` per command on SATA, whose
-  command rate caps 4K random reads near 100K IOPS) and a controller
-  latency `iface_us` per command;
+- a host link (`iface_mbps`, plus `cmd_us` of link time per command; on
+  SATA that command rate caps 4K random reads near 100K IOPS, the NVMe
+  profile sets it to 0) and a controller latency `iface_us` per command;
 - a write buffer: writes complete once buffered; full pages are
   programmed on whichever die is free first. Steady-state garbage
   collection is folded in: a page of random writes costs `waf` program
   units, a page of writes continuing a recent stream costs one;
 - FLUSH: with power-loss protection (`--plp 1`) the buffer is durable and
   a flush costs `flush_us`; without it the flush waits until everything
-  buffered is programmed, plus `flush_us`. SATA flushes are non-queued
-  (everything behind them waits), NVMe flushes are queued. `--vwc 0`
-  advertises no volatile cache, so the kernel sends no flushes, as for
-  NVMe drives that report none;
+  buffered is programmed, plus `flush_us`. A flush with nothing written
+  since the previous one is free. SATA flushes are non-queued, everything
+  behind them waits (SATA also means NCQ: at most 32 commands, `-d 32`);
+  NVMe flushes are queued. `--vwc 0` advertises no volatile cache, so the
+  kernel sends no flushes, as for NVMe drives that report none;
 - `--floor_us`: the host's own ublk overhead, subtracted from every
   completion so that the parameters are device latencies (docs/GUIDE.md).
 

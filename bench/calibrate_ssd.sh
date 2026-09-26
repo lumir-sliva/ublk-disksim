@@ -57,8 +57,9 @@ mean_lat_us() {  # device: mean 4K random read latency at QD1, us
 
 if [ -z "${FLOOR_US:-}" ]; then
     raw=$(mean_lat_us "$BACK")
-    "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --tr_us 100 \
-        --iface_us 0 --cmd_us 0 --ch_mbps 1e6 --iface_mbps 1e6 --floor_us 0 \
+    "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --iface nvme \
+        --tr_us 100 --iface_us 0 --cmd_us 0 --ch_mbps 1e6 --iface_mbps 1e6 \
+        --floor_us 0 \
         "$BACK" >/dev/null
     udevadm settle
     fixed=$(mean_lat_us "$DEV")
@@ -126,6 +127,18 @@ fio --filename="$DEV" --direct=1 --ioengine=io_uring \
     --name=reader --rw=randread --bs=4k --iodepth=1 \
     --name=writer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 >/dev/null
 summary "$OUT/blocking.json" blocking
+
+# a bulk random writer keeping the buffer full, next to a writer that
+# fsyncs every write, on separate halves of the device
+fio --filename="$DEV" --direct=1 --ioengine=io_uring \
+    --time_based --runtime="$RT" --randrepeat=0 \
+    --output-format=json --output="$OUT/full-fsync.json" \
+    --name=bulk --rw=randwrite --bs=4k --iodepth=16 --offset=0 --size=2G \
+    --name=fsyncer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 \
+    --offset=2G --size=2G >/dev/null
+summary "$OUT/full-fsync.json" full-fsync
+echo "flushes seen by the kernel: $(flushes)" \
+     "(the model's own count is in $OUT/model.stats after teardown)"
 
 cat "$OUT/model.stats"
 echo "results in $OUT"

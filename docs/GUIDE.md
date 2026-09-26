@@ -10,7 +10,7 @@ the model did, and fit it to a drive you care about.
 - liburing headers: `apt install liburing-dev` (Debian/Ubuntu) or
   `dnf install liburing-devel`.
 - root, for `/dev/ublk-control` and for creating the RAM backing device.
-- fio, for `bench/calibrate.sh`.
+- fio and python3, for `bench/calibrate.sh` and `bench/calibrate_ssd.sh`.
 
 ## 2. Build
 
@@ -178,7 +178,11 @@ device.
 | symptom | cause |
 |---|---|
 | `can't open /dev/ublk-control` | `modprobe ublk_drv`, run as root |
+| `cmd_dev_add: command failed` | the target refused its options; the daemon's messages are lost, so rerun with `--foreground` to see which |
 | `hdd: one actuator, needs -q 1` | pass `-q 1` and no `--nthreads` |
+| `ssd: one model thread, needs -q 1` | same for the ssd target |
+| `ssd: SATA NCQ holds 32 commands` | pass `-d 32`, or `--iface nvme` for a deeper queue |
+| `too many target options` | kublk takes at most 15 target options: start from the nearest `--profile` and override only what differs |
 | I/O errors with a 4K-block backing device | the model is 512e: use a backing store with 512-byte blocks |
 | build fails on `IORING_OP_*` | liburing too old; the Makefile already leaves out `stripe.c` |
 
@@ -240,19 +244,21 @@ sudo FLOOR_US=24 bench/calibrate_ssd.sh 30 --profile nvme-plp --waf 4
 
 Jobs: 4K random read at QD1, QD32 (and QD128 for NVMe), 128K sequential
 read and write at QD32, 4K random write at QD1 and QD32, 4K random and
-sequential writes with an fsync after each, and a reader next to a
-fsyncing writer.
+sequential writes with an fsync after each, a reader next to a
+fsyncing writer, and a QD16 random writer keeping the buffer full next
+to a fsyncing writer.
 
 To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
 write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the
 QD32 random read IOPS, `dies` · page / `tprog_us` to the sequential
 write rate, and `waf` to the steady-state (full drive) random write
 IOPS. `flush_us` comes from a measured 4K write + fsync at QD1, which
-Ceph users publish for many drives. Then add a profile to `profiles[]`
-in `ssd.c`.
+Ceph users publish for many drives. Start from the nearest `--profile`
+and override what differs (kublk takes at most 15 target options), then
+add a profile to `profiles[]` in `ssd.c`.
 
-Limits: tier-one model. No garbage collection as a process (the `waf`
-factor charges it to the writes that cause it, at steady state), no SLC
-cache, no program suspend (a read behind a program waits for it), no
-reads from the write buffer, one model thread (~270K IOPS and ~4.4 GB/s
-on a current server, below NVMe drives' peak).
+Limits: a first-order model. No garbage collection as a process (the
+`waf` factor charges it to the writes that cause it, at steady state),
+no SLC cache, no program suspend (a read behind a program waits for it),
+no reads from the write buffer, one model thread (~190K 4K IOPS and
+~4 GB/s on a current server, below NVMe drives' peak).

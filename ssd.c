@@ -26,12 +26,14 @@
  *    With plp = 1 the buffer is durable and a flush costs flush_us after
  *    it is issued; with plp = 0 the partly filled page is closed and the
  *    flush waits until every buffered page is programmed, plus flush_us
- *    (mapping-table commit). On SATA it is non-queued, as FLUSH CACHE:
+ *    (mapping-table commit). A flush with nothing written since the
+ *    previous one is free. On SATA it is non-queued, as FLUSH CACHE:
  *    earlier commands finish first, everything arriving meanwhile, reads
  *    included, waits for it. On NVMe it is queued and holds nothing up;
- *  - floor_us: the host's own ublk overhead per request, measured on an
- *    empty target and subtracted from each completion (never below the
- *    request's arrival), so the parameters stay device latencies.
+ *  - floor_us: the host's own overhead per request (ublk round trip and
+ *    the server waking for its timer), subtracted from each completion
+ *    (never below the request's arrival), so the parameters stay device
+ *    latencies.
  *
  * Not modelled: garbage collection as a process (idle-time GC, fill level,
  * over-provisioning), SLC caching, program/erase suspend, reads served
@@ -61,7 +63,7 @@ struct ssd_req {
 
 /* a closed buffer page waiting to be programmed or being programmed */
 struct ssd_page {
-	__u64 bytes, rnd;	/* rnd: bytes from random writes */
+	__u64 bytes;
 	__u64 ready;		/* closed at */
 	double units;		/* program units not started yet */
 	__u64 end;		/* end of its last unit */
@@ -115,6 +117,7 @@ struct ssd_model {
 	int sflush_tag;
 	struct ssd_req sflush;
 	int sflush_closed;
+	int dirty;		/* data admitted since the last flush took it */
 	__u64 sflush_seq;
 	struct ssd_req *held;
 	int nheld;
@@ -210,7 +213,7 @@ static void done(struct ssd_model *m, const struct ssd_req *r, __u64 when)
 static void flush_done(struct ssd_model *m, const struct ssd_req *r,
 		       __u64 when)
 {
-	__u64 d = when - r->t;
+	__u64 d = when - r->arrive;
 
 	m->flush_ns_sum += d;
 	if (d > m->flush_ns_max)
@@ -319,7 +322,6 @@ static void close_open(struct ssd_model *m, __u64 ready)
 	}
 	pg = page(m, m->seq_next++);
 	pg->bytes = m->open_bytes;
-	pg->rnd = m->open_rnd;
 	pg->ready = ready;
 	pg->units = 1 + (m->p.waf - 1) * (double)m->open_rnd / m->open_bytes;
 	pg->end = 0;
@@ -353,6 +355,7 @@ static void admit(struct ssd_model *m, const struct ssd_req *r, __u64 a)
 	__u64 left = r->nr << 9;
 
 	m->buf_bytes += left;
+	m->dirty = 1;
 	while (left) {
 		__u64 take = min_u64(left, m->page_bytes - m->open_bytes);
 
@@ -468,18 +471,25 @@ static int sata_flush_check(struct ssd_model *m)
 	if (m->sflush_tag < 0 || m->nwait)
 		return 0;
 	drain = max_u64(m->sflush.t, m->last_done);
-	if (!m->p.plp) {
-		if (!m->sflush_closed) {
+	if (!m->sflush_closed) {
+		m->sflush_closed = 1;
+		if (!m->dirty) {	/* nothing written since: free, as hdd */
+			sata_flush_finish(m, drain);
+			return 1;
+		}
+		m->dirty = 0;
+		if (!m->p.plp) {
 			/*
 			 * The drive programs a partial page only because of the
 			 * flush, so not before it; and it's a new page to
 			 * program: let run_units see it.
 			 */
 			close_open(m, max_u64(m->open_last, m->sflush.t));
-			m->sflush_closed = 1;
 			m->sflush_seq = m->seq_next;
 			return 1;
 		}
+	}
+	if (!m->p.plp) {
 		if (m->seq_start < m->sflush_seq)
 			return 0;
 		drain = max_u64(drain, m->max_end_started);
@@ -536,6 +546,7 @@ static void pump(struct ssd_model *m)
 static void do_read(struct ssd_model *m, const struct ssd_req *r)
 {
 	__u64 off = r->lba << 9, end = off + (r->nr << 9), fdone = r->t, p;
+	__u64 wait = 0;
 
 	m->n_read++;
 	for (p = off / m->page_bytes; p * m->page_bytes < end; p++) {
@@ -544,12 +555,14 @@ static void do_read(struct ssd_model *m, const struct ssd_req *r)
 		__u64 *df = &m->die_free[p % m->p.dies];
 		__u64 s = max_u64(*df, r->t);
 
-		if (s > r->t) {
-			m->n_read_wait++;
-			m->read_wait_ns_sum += s - r->t;
-		}
+		if (s - r->t > wait)
+			wait = s - r->t;
 		*df = s + m->tr_ns + xfer_ns(m->p.ch_mbps, e0 - s0);
 		fdone = max_u64(fdone, *df);
+	}
+	if (wait) {
+		m->n_read_wait++;
+		m->read_wait_ns_sum += wait;
 	}
 	done(m, r, link_reserve(m, fdone, m->cmd_ns +
 				xfer_ns(m->p.iface_mbps, r->nr << 9)) +
@@ -589,6 +602,11 @@ static void do_flush(struct ssd_model *m, const struct ssd_req *r)
 		m->sflush_closed = 0;
 		return;
 	}
+	if (!m->dirty) {	/* nothing written since the last flush */
+		flush_done(m, r, r->t);
+		return;
+	}
+	m->dirty = 0;
 	if (m->p.plp) {
 		flush_done(m, r, r->t + m->flush_ns);
 		return;
@@ -728,6 +746,11 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	    ((__u64)p->page_kb << 10)) {
 		ublk_err("ssd: bad model parameters (buf_mb must hold the "
 			 "largest request plus a page)\n");
+		return -EINVAL;
+	}
+	if (!p->nvme && depth > 32) {
+		ublk_err("ssd: SATA NCQ holds 32 commands: use -d 32 "
+			 "(or --iface nvme)\n");
 		return -EINVAL;
 	}
 
