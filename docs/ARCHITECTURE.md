@@ -110,7 +110,10 @@ One actuator, a platter, a volatile write cache.
   sorted by LBA, merged when they overlap or touch. Write-back picks the
   extent that can start first over the whole set (searching outward from
   the head and stopping once the seek alone can't win) and moves at most
-  one track. Its cache space is freed when that transfer ends.
+  one track. With `wb_window N` it picks among the N extents that arrived
+  first instead (an arrival counter per extent; a merged extent keeps its
+  oldest piece's), a drive that reorders little. Its cache space is
+  freed when that transfer ends.
 - **When write-back runs:** whenever the actuator has nothing queued.
   Once the cache is 3/4 full or writes wait for space, also in turn with
   the queue: one write-back per queued request served.

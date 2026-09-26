@@ -15,6 +15,7 @@ struct hdd_params {
 	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
 	unsigned	ncq;		/* requests considered for reordering */
 	double		max_wait_ms;	/* a request passed over this long goes next */
+	unsigned	wb_window;	/* write-back picks among the N oldest dirty extents, 0 = all */
 	double		stroke;		/* fraction of the full stroke the device spans */
 	unsigned long long seed;
 	char		stats[256];	/* stats file, rewritten once a second */
@@ -30,6 +31,7 @@ struct hdd_req {
 struct hdd_ext {
 	__u64 lba, nr;			/* sectors */
 	__u64 added;			/* when it entered the cache */
+	__u64 seq;			/* arrival order (oldest merged piece) */
 };
 
 /* all state is here so the tests can check invariants */
@@ -65,6 +67,7 @@ struct hdd_model {
 	int ndirty, cap_dirty;
 	__u64 dirty_bytes;		/* extents + the write-back in progress */
 	__u64 destaging;		/* bytes of the write-back in progress */
+	__u64 next_seq;			/* arrival counter for hdd_ext.seq */
 	int wb_turn;			/* a write-back ran since the last queued request */
 
 	/* stats */

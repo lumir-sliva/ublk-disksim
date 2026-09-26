@@ -102,11 +102,11 @@ static int hdd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	dev->private_data = d;
 
 	ublk_log("hdd: rpm %u seek %.2f/%.2f/%.2f ms (min/avg/full) media %.0f MB/s "
-		 "(%.0f sectors/track) cache %u MiB ncq %u max wait %.0f ms "
-		 "stroke %.2f\n",
+		 "(%.0f sectors/track) cache %u MiB ncq %u wb window %u "
+		 "max wait %.0f ms stroke %.2f\n",
 		 p->rpm, p->seek_min_ms, p->seek_avg_ms, d->m->seek_full_ms,
-		 p->mbps, d->m->spt, p->cache_mb, p->ncq, p->max_wait_ms,
-		 p->stroke);
+		 p->mbps, d->m->spt, p->cache_mb, p->ncq, p->wb_window,
+		 p->max_wait_ms, p->stroke);
 	return 0;
 }
 
@@ -164,6 +164,8 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->cache_mb = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--ncq"))
 			p->ncq = strtoul(v, NULL, 10);
+		else if (!strcmp(k, "--wb_window"))
+			p->wb_window = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--max_wait_ms"))
 			p->max_wait_ms = strtod(v, NULL);
 		else if (!strcmp(k, "--stroke"))
@@ -178,12 +180,13 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 
 static void hdd_usage(const struct ublk_tgt_ops *ops)
 {
-	printf("\thdd: [--profile hgst-7k8] [--rpm N] [--seek_min_ms X] "
-	       "[--seek_avg_ms X]\n"
+	printf("\thdd: [--profile hgst-7k8|barracuda-2t] [--rpm N] "
+	       "[--seek_min_ms X] [--seek_avg_ms X]\n"
 	       "\t     [--mbps X] [--iface_mbps X] [--iface_us X] "
 	       "[--cache_mb N (0 = write-through)]\n"
-	       "\t     [--ncq N] [--max_wait_ms X (0 = none)] [--stroke F] "
-	       "[--seed N] [--stats FILE] "
+	       "\t     [--ncq N] [--wb_window N (0 = whole cache, max 64)] "
+	       "[--max_wait_ms X (0 = none)]\n"
+	       "\t     [--stroke F] [--seed N] [--stats FILE] "
 	       "BACKING_DEV (use -q 1 -d 32)\n");
 }
 

@@ -17,8 +17,9 @@
  *    head is costs no positioning (see pos_ns);
  *  - a volatile write cache (cache_mb > 0): writes complete after the host
  *    transfer and are written back by the actuator
- *    shortest-positioning-time-first over the whole cache, at most one
- *    track per operation so queued reads get a turn in between. Write-back
+ *    shortest-positioning-time-first over the whole cache, or over the
+ *    wb_window oldest dirty extents if set, at most one track per
+ *    operation so queued reads get a turn in between. Write-back
  *    runs when the actuator has nothing else to do; once the cache is 3/4
  *    full or writes wait for space, it also alternates with the queue,
  *    one write-back per queued request served (one that started while the
@@ -31,7 +32,8 @@
  *
  * Not modelled: zoned transfer rates (one rate, one track size), read
  * cache / read-ahead beyond "sequential costs no positioning", firmware
- * limits on dirty data, destage idle timers, thermal recalibration.
+ * limits on dirty data other than cache_mb, destage idle timers, thermal
+ * recalibration, a fixed cost per flush.
  * Calibrate against the drive you want to imitate before trusting
  * absolute numbers.
  *
@@ -129,7 +131,7 @@ static int dirty_find_end(struct hdd_model *m, __u64 lba)
  */
 static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 {
-	__u64 s = lba, e = lba + nr;
+	__u64 s = lba, e = lba + nr, seq = m->next_seq++;
 	int i = dirty_find_end(m, s), j = i;
 
 	while (j < m->ndirty && m->dirty[j].lba <= e) {
@@ -139,6 +141,8 @@ static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 			s = x->lba;
 		if (x->lba + x->nr > e)
 			e = x->lba + x->nr;
+		if (x->seq < seq)
+			seq = x->seq;
 		m->dirty_bytes -= x->nr << 9;
 	}
 	if (j == i) {		/* nothing merged: make room at i */
@@ -159,6 +163,7 @@ static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 	m->dirty[i].lba = s;
 	m->dirty[i].nr = e - s;
 	m->dirty[i].added = t;
+	m->dirty[i].seq = seq;
 	m->dirty_bytes += (e - s) << 9;
 }
 
@@ -167,6 +172,46 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now);
 static __u64 max_u64(__u64 a, __u64 b)
 {
 	return a > b ? a : b;
+}
+
+#define HDD_WB_WINDOW_MAX 64
+
+/*
+ * wb_window N: the drive only reorders its write-back among the N extents
+ * that entered the cache first (a small firmware queue), shortest
+ * positioning time among those. Found by one pass keeping the N oldest
+ * (by arrival order, `seq`: several writes can arrive at the same time)
+ * in a small sorted array.
+ */
+static int best_dirty_window(struct hdd_model *m, __u64 free_at,
+			     double *bready)
+{
+	int idx[HDD_WB_WINDOW_MAX], n = 0, w = (int)m->p.wb_window, i, j;
+	int best = -1;
+
+	for (i = 0; i < m->ndirty; i++) {
+		__u64 a = m->dirty[i].seq;
+
+		if (n == w && a >= m->dirty[idx[n - 1]].seq)
+			continue;
+		j = n < w ? n++ : n - 1;
+		while (j > 0 && m->dirty[idx[j - 1]].seq > a) {
+			idx[j] = idx[j - 1];
+			j--;
+		}
+		idx[j] = i;
+	}
+	for (j = 0; j < n; j++) {
+		const struct hdd_ext *x = &m->dirty[idx[j]];
+		__u64 t = max_u64(free_at, x->added);
+		double ready = t + pos_ns(m, t, m->head, x->lba, 1);
+
+		if (best < 0 || ready < *bready) {
+			*bready = ready;
+			best = idx[j];
+		}
+	}
+	return best;
 }
 
 /*
@@ -178,7 +223,11 @@ static __u64 max_u64(__u64 a, __u64 b)
  */
 static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
 {
-	int k = dirty_find_end(m, m->head), i, best = -1;
+	int k, i, best = -1;
+
+	if (m->p.wb_window && m->ndirty > (int)m->p.wb_window)
+		return best_dirty_window(m, free_at, bready);
+	k = dirty_find_end(m, m->head);
 
 	for (i = k; i < m->ndirty; i++) {
 		const struct hdd_ext *x = &m->dirty[i];
@@ -428,8 +477,12 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 
 /*
  * Profiles: named parameter sets. hgst-7k8 approximates the HGST
- * Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA, 7200 rpm); see README
- * for the sources and the calibration status of each number.
+ * Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA, 7200 rpm) from its spec
+ * sheet; barracuda-2t the Seagate BarraCuda ST2000DM006 (2 TB SATA,
+ * 7200 rpm), fitted to measurements of a real drive: it seeks slower
+ * than its spec sheet says, reorders little, and holds few random
+ * writes in its cache. See README for the sources and the calibration
+ * status of each number.
  */
 static const struct {
 	const char *name;
@@ -439,6 +492,12 @@ static const struct {
 		.rpm = 7200, .seek_min_ms = 0.6, .seek_avg_ms = 8.0,
 		.mbps = 205, .iface_mbps = 600, .iface_us = 30,
 		.cache_mb = 64, .ncq = 32, .stroke = 1.0, .max_wait_ms = 500,
+	} },
+	{ "barracuda-2t", {
+		.rpm = 7200, .seek_min_ms = 1.0, .seek_avg_ms = 13.0,
+		.mbps = 150, .iface_mbps = 600, .iface_us = 30,
+		.cache_mb = 1, .ncq = 4, .wb_window = 8, .stroke = 1.0,
+		.max_wait_ms = 500,
 	} },
 };
 
@@ -459,6 +518,7 @@ int hdd_params_check(const struct hdd_params *p, __u64 max_io_bytes)
 	if (p->seek_avg_ms < p->seek_min_ms || p->seek_min_ms < 0 ||
 	    p->rpm == 0 || p->mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->iface_us < 0 || p->stroke <= 0 || p->ncq == 0 ||
+	    p->wb_window > HDD_WB_WINDOW_MAX ||
 	    !(p->max_wait_ms >= 0 && p->max_wait_ms <= 1e9) ||
 	    (p->cache_mb && ((__u64)p->cache_mb << 20) < max_io_bytes))
 		return -EINVAL;

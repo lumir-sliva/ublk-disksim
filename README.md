@@ -27,11 +27,12 @@ What it models (see the header of `hdd_model.c`):
   no positioning (a write-through write that arrives after the previous
   one finished waits for its sector to come round);
 - volatile write cache: writes complete after the host transfer and are
-  written back one track at most per operation, when the actuator is
-  idle, and once the cache is 3/4 full or writes wait for space also in
-  turn with queued requests (one write-back per request served, one that
-  started while the queue was empty counts); a full cache makes writes
-  wait;
+  written back one track at most per operation, shortest positioning
+  time first over the whole cache or, with `--wb_window N`, over the N
+  writes that arrived first; when the actuator is idle, and once the
+  cache is 3/4 full or writes wait for space also in turn with queued
+  requests (one write-back per request served, one that started while
+  the queue was empty counts); a full cache makes writes wait;
 - FLUSH as SATA `FLUSH CACHE`: non-queued. Queued requests finish, the
   whole cache is destaged, and everything that arrives meanwhile, reads
   included, waits;
@@ -47,26 +48,37 @@ don't publish theirs.
 
 Parameters (`kublk add -t hdd ... --<name> <value>`):
 
-| option | meaning | `hgst-7k8` |
-|---|---|---|
-| `--profile` | named parameter set, applied first | |
-| `--rpm` | spindle speed | 7200 |
-| `--seek_min_ms` | track-to-track seek | 0.6 |
-| `--seek_avg_ms` | average random seek | 8.0 |
-| `--mbps` | media transfer rate | 205 |
-| `--iface_mbps` | host link rate (cached writes) | 600 |
-| `--iface_us` | per-command overhead (cached writes) | 30 |
-| `--cache_mb` | volatile write cache, 0 = write-through | 64 |
-| `--ncq` | requests considered for reordering | 32 |
-| `--max_wait_ms` | a request passed over this long goes next, 0 = no limit | 500 |
-| `--stroke` | fraction of the full stroke the device spans | 1.0 |
-| `--seed` | platter phase at clock zero | 0 |
-| `--stats` | file rewritten once a second with model counters | |
+| option | meaning | `hgst-7k8` | `barracuda-2t` |
+|---|---|---|---|
+| `--profile` | named parameter set, applied first | | |
+| `--rpm` | spindle speed | 7200 | 7200 |
+| `--seek_min_ms` | track-to-track seek | 0.6 | 1.0 |
+| `--seek_avg_ms` | average random seek | 8.0 | 13.0 (fitted) |
+| `--mbps` | media transfer rate | 205 | 150 (fitted) |
+| `--iface_mbps` | host link rate (cached writes) | 600 | 600 |
+| `--iface_us` | per-command overhead (cached writes) | 30 | 30 |
+| `--cache_mb` | volatile write cache, 0 = write-through | 64 | 1 (fitted) |
+| `--ncq` | requests considered for reordering | 32 | 4 (fitted) |
+| `--wb_window` | write-back considers the N oldest dirty writes, 0 = all | 0 | 8 (fitted) |
+| `--max_wait_ms` | a request passed over this long goes next, 0 = no limit | 500 | 500 |
+| `--stroke` | fraction of the full stroke the device spans | 1.0 | 1.0 |
+| `--seed` | platter phase at clock zero | 0 | 0 |
+| `--stats` | file rewritten once a second with model counters | | |
 
 `hgst-7k8` follows the HGST/WD Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA)
 spec sheet: 8 ms average seek, 4.16 ms average latency, 205 MB/s internal
 rate, 6 Gb/s SATA, 256 MB buffer. How much of the buffer caches writes
 isn't published; 64 MiB is an assumption.
+
+`barracuda-2t` is fitted to one real Seagate BarraCuda ST2000DM006 (2 TB
+SATA, 7200 rpm) rather than its spec sheet, which it doesn't meet: random
+reads take 17.5 ms (spec: 8.5 ms seek + 4.16 ms), queueing 32 reads gains
+only 1.7×, over 30 s it takes random writes only at its write-back pace,
+and a flush after N scattered 4K writes costs about 28 + 9.4 N ms. So the
+model seeks slower, reorders over few requests and few cached writes,
+and holds only 1 MiB of random writes. Measured through NTFS on a
+98%-full volume, so the test file was spread over the platter (full
+stroke).
 
 Calibration of `hgst-7k8` (`bench/calibrate.sh 30`, kernel 6.17, 4 GiB
 device, so seeks span the full stroke; one run, the latest checked run
@@ -80,11 +92,24 @@ is in [docs/VALIDATION.md](docs/VALIDATION.md)):
 | 1M sequential write QD1 / QD4, cache on | 207 / 206 MB/s, QD4 p99 25 ms | |
 | 1M sequential write QD1 / QD4, cache off | 78 / 205 MB/s | QD1 misses a revolution per write |
 | 4K random write + fsync | 80/s, flush 12.4 ms | 13–16 ms median per flush on these drives in production, at 0.4–5 flushes/s with ~4 larger writes per flush |
+| flush after 8 / 64 scattered cached 4K writes | 73 / 335 ms | a consumer drive that reorders little: ~100 / ~600 ms (below) |
 | flush of a full 64 MiB cache of random 4K writes | 11–15 s | unknown |
 | 4K read QD1 next to a write+fsync QD1 job | 41 IOPS, 24.5 ms p50 | reads wait for the flush |
 | 4K read QD4 next to a 4K random writer QD1, cache on | reads 106 IOPS; writes 653 IOPS, p99 14 ms (cache stays full) | |
 | 4K read QD1 next to a 1M sequential writer QD4, cache on / off | reads 30 IOPS, p50 33 ms; writes 53 MB/s / reads 2 IOPS, p99 522 ms (age limit); writes 191 MB/s | depends on how a drive shares time between them (assumed one-for-one, 500 ms age limit) |
 | cache off, 4K random write QD1 | 80 IOPS, 0 flushes at the device | |
+
+Calibration of `barracuda-2t` (`bench/calibrate.sh 30 --profile
+barracuda-2t`), against the real ST2000DM006 (fio through NTFS, test file
+spread over the platter):
+
+| test | model | real drive |
+|---|---|---|
+| 4K random read QD1 | 17.3 ms mean | 17.2–17.8 ms |
+| 4K random read QD32 | 82 IOPS | 94 IOPS |
+| 1M sequential read / write QD1 | 139 / 150 MB/s | 143 / 132 MB/s |
+| 4K random write QD1, 30 s | 108 IOPS | 124 IOPS |
+| flush after 8 / 64 scattered cached 4K writes | 103 / 656 ms | 127 / 630 ms p50, including NTFS metadata (fit 28 + 9.4 N ms) |
 
 ### `ssd`: flash SSD, SATA or NVMe
 

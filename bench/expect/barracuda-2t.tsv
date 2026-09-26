@@ -1,0 +1,14 @@
+# Seagate BarraCuda ST2000DM006 (2 TB SATA, 7200 rpm), write cache on; 4 GiB device, full stroke.
+# Reference: one real drive, measured through NTFS on Windows (fio 3.43 windowsaio, and a
+# FlushFileBuffers test), with the test file spread over the platter (a 98%-full volume).
+# Flush references subtract nothing for NTFS: the fitted flush(N) = 28 + 9.4 N ms has an
+# unknown file system share in its 28 ms, so the sync rows have wide tolerances.
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	17500	0.1	measured: 17.2-17.8 ms mean (two runs)
+randread-qd32	randread-qd32	read	iops	~	94	0.25	measured: 94 IOPS, 1.7x QD1 (the drive reorders little)
+seqread-1m	seqread-1m	read	mbps	~	143	0.15	measured: 143 MB/s (file spread over the platter)
+seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	132	0.15	measured: 132 MB/s
+randwrite-qd1	randwrite-qd1	write	iops	~	124	0.25	measured: 124-125 IOPS over 30 s: the cache holds few random writes
+randwrite-fsync8	randwrite-fsync8	sync	fsync_mean_us	~	100000	0.3	measured: flush after 8 scattered writes 127 ms p50 incl. NTFS (fit 28 + 9.4 N)
+randwrite-fsync64	randwrite-fsync64	sync	fsync_mean_us	~	600000	0.2	measured: flush after 64 scattered writes 630 ms p50 incl. NTFS (fit 28 + 9.4 N)
+stats	-	-	late_us_p99	<=	500	0	completions fire within 500 us of the model's schedule

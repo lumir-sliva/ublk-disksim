@@ -520,6 +520,58 @@ static void hdd_cached_write_and_flush(void)
 	sim_free(&s);
 }
 
+/*
+ * Flush after 64 cached 4K writes scattered over the device, all arriving
+ * at once and followed at once by the flush, as a deferred batch is (a
+ * queue deeper than SATA's 32 so they fit in one go).
+ */
+static double hdd_flush_after_64(const struct hdd_params *p)
+{
+	struct sim s;
+	__u64 t0;
+	int i, f;
+	double t;
+
+	hdd_up(&s, p, MAXQ);
+	for (i = 0; i < 64; i++)
+		CHECK(sim_submit(&s, MODEL_WRITE, rnd_below(HDD_SECTORS / 8) * 8,
+				 8, NULL) >= 0, "write %d not submitted", i);
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	CHECK(f >= 0, "flush not submitted");
+	if (f < 0) {
+		sim_free(&s);
+		return 0;
+	}
+	sim_drain(&s, s.now + 60 * SEC);
+	t = (double)(s.rq[f].done_at - t0);
+	sim_free(&s);
+	return t;
+}
+
+static void hdd_wb_window(void)
+{
+	struct hdd_params p = hdd_p();
+	/* one write-back at a random position: average seek + half a turn */
+	double one = p.seek_avg_ms * 1e6 + rev_ns(&p) / 2 + xfer_ns_of(p.mbps, 4096);
+	double t0, t4, t1;
+
+	p.wb_window = 0;
+	t0 = hdd_flush_after_64(&p);
+	p.wb_window = 4;
+	t4 = hdd_flush_after_64(&p);
+	p.wb_window = 1;
+	t1 = hdd_flush_after_64(&p);
+
+	cur_test = "hdd: wb_window 1 writes back in arrival order, one random access each";
+	CHECK(t1 > 0.7 * 64 * one && t1 < 1.3 * 64 * one,
+	      "flush of 64 scattered writes %.0f ms, 64 random accesses = %.0f ms",
+	      t1 / 1e6, 64 * one / 1e6);
+	cur_test = "hdd: a wider write-back window reorders more";
+	CHECK(t0 < t4 && t4 < t1, "flush after 64: window all %.0f, 4 %.0f, 1 %.0f ms",
+	      t0 / 1e6, t4 / 1e6, t1 / 1e6);
+}
+
 static void hdd_writeback_by_track(void)
 {
 	struct hdd_params p = hdd_p();
@@ -884,7 +936,7 @@ static void random_workload(struct sim *s, __u64 max_nr, int flushes,
 static void hdd_random(int runs)
 {
 	static const unsigned cache[] = { 0, 1, 4, 64 }, ncq[] = { 1, 4, 32 },
-		rpm[] = { 5400, 7200, 15000 };
+		rpm[] = { 5400, 7200, 15000 }, window[] = { 0, 1, 4 };
 	static const double wait[] = { 0, 50, 500 };
 	int i;
 
@@ -898,6 +950,7 @@ static void hdd_random(int runs)
 		p.ncq = ncq[rnd_below(3)];
 		p.rpm = rpm[rnd_below(3)];
 		p.max_wait_ms = wait[rnd_below(3)];
+		p.wb_window = window[rnd_below(3)];
 		p.seed = rnd();
 		hdd_up(&s, &p, 32);
 		s.deep_check = 1;
@@ -953,6 +1006,7 @@ int main(int argc, char **argv)
 	hdd_random_read_latency();
 	hdd_cached_write_and_flush();
 	hdd_writeback_by_track();
+	hdd_wb_window();
 	hdd_writer_next_to_readers();
 	hdd_age_limit();
 	ssd_qd1_costs();

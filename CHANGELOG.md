@@ -6,6 +6,14 @@ when you report one.
 
 ## Unreleased
 
+- **hdd `--wb_window N`:** write-back picks among the N writes that
+  arrived first instead of the whole cache (0, the default, keeps the old
+  behaviour). **Profile `barracuda-2t`**, fitted to a real Seagate
+  ST2000DM006: slower seeks, `ncq` 4, `wb_window` 8, a 1 MiB cache for
+  random writes. `hgst-7k8` results unchanged (same calibration within
+  noise). calibrate.sh gains flushes after 8 and 64 scattered writes;
+  `hgst-7k8`: 73 ms and 335 ms, `barracuda-2t`: 103 ms and 656 ms (the
+  real drive: ~100 ms and ~600 ms, through NTFS).
 - **Model cores separated from the server.** `hdd_model.c` and
   `ssd_model.c` see time, completions and wake-ups only through
   `model.h`; `model_kublk.c` is the shared kublk glue. Calibration

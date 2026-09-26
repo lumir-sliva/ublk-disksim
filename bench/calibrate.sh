@@ -87,6 +87,10 @@ EOF
 # timed on its own so it doesn't land inside the next job
 timed_flush randwrite-qd1
 run randwrite-fsync --rw=randwrite --bs=4k --iodepth=1 --fsync=1
+# a flush after 8 and after 64 scattered cached writes: how much the drive
+# reorders its write-back (a deferred batch of small writes, then a flush)
+run randwrite-fsync8  --rw=randwrite --bs=4k --iodepth=1 --fsync=8
+run randwrite-fsync64 --rw=randwrite --bs=4k --iodepth=1 --fsync=64
 nf=$(( $(flushes) - f0 ))
 echo "flushes during write jobs: $nf"
 printf 'write-jobs\t-\t-\tdevice_flushes\t%s\n' "$nf" >> "$OUT/results.tsv"

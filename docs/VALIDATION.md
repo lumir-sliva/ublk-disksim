@@ -41,6 +41,7 @@ unit:
 | hdd | full cache, sequential writer | a read waits at most two tracks + a full seek + a revolution |
 | hdd | full cache, QD4 readers | the cached writer keeps moving (> 30 writes/s, no write over 1 s) |
 | hdd | sequential write stream | a random read waits at most `max_wait_ms` + 3 operations; without the limit it starves (control) |
+| hdd | 64 scattered cached writes, then FLUSH, `wb_window` 1 | the flush takes 64 × (`seek_avg_ms` + half a revolution + transfer), ±30%; window 0 < 4 < 1 |
 | ssd | QD1 read, write | exactly the documented sums (`tr_us` + channel + `cmd_us` + link + `iface_us`) |
 | ssd | `floor_us` | subtracted exactly; never below arrival |
 | ssd | reads on different dies | overlap; on one die they queue (≥ n × `tr_us`) |
