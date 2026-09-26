@@ -1,0 +1,13 @@
+# HGST Ultrastar 7K8 (HUS728T8TALE6L4), write cache on; 4 GiB device, full stroke
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	12200	0.1	spec: 8.0 ms avg seek + 4.16 ms avg latency
+randread-qd32	randread-qd32	read	iops	~	200	0.15	typical 7200 rpm SATA with NCQ
+seqread-1m	seqread-1m	read	mbps	~	205	0.1	spec: 205 MB/s internal rate
+seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	205	0.1	spec: 205 MB/s internal rate
+seqwrite-1m-qd4	seqwrite-1m-qd4	write	mbps	~	205	0.1	spec: 205 MB/s internal rate
+seqwrite-1m-qd4	seqwrite-1m-qd4	write	lat_p99_us	<=	40000	0	model: write-back one track at a time
+randwrite-fsync	randwrite-fsync	sync	fsync_mean_us	~	14500	0.2	production: 13-16 ms median per flush
+blocking	reader	read	lat_p50_us	>=	12000	0	model: reads wait behind the non-queued flush
+read-vs-cache	writer	write	lat_p99_us	<=	100000	0	model: a writer next to readers never stalls
+read-vs-seq	reader	read	lat_p99_us	<=	100000	0	model: a reader waits for tracks, not the whole cache
+stats	-	-	late_us_p99	<=	500	0	completions fire within 500 us of the model's schedule (4% of a 12 ms operation)

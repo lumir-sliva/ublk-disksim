@@ -1,0 +1,10 @@
+# Samsung PM883 960 GB (enterprise SATA, power-loss protection)
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	120	0.1	spec: 120 us QD1 read
+randread-qd32	randread-qd32	read	iops	~	98000	0.1	spec: 98K IOPS 4K random read
+seqread-128k	seqread-128k	read	mbps	~	550	0.1	spec: 550 MB/s
+seqwrite-128k	seqwrite-128k	write	mbps	~	520	0.1	spec: 520 MB/s
+randwrite-qd1	randwrite-qd1	write	lat_mean_us	~	40	0.1	spec: 40 us QD1 write
+randwrite-qd32	randwrite-qd32	write	iops	~	25000	0.1	spec: 25K IOPS steady-state random write
+randwrite-fsync	randwrite-fsync	write	iops	~	15500	0.15	published: 15.5K 4K write+fsync/s (needs a floor <= ~20 us)
+stats	-	-	late_us_p99	<=	150	0	completions fire within 150 us of the model's schedule

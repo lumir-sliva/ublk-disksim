@@ -14,7 +14,10 @@
 # /dev/ublkb<ID>, runs the fio jobs below one at a time, prints one
 # summary line per job and tears everything down. Queue depth is 128 if
 # the options mention nvme, else 32 (override with DEPTH). Results (fio
-# json, model stats) go to $OUT.
+# json, results.tsv, model stats) go to $OUT. With only --profile <p>, the
+# run ends with bench/check.py against bench/expect/<p>.tsv and exits
+# non-zero if a number is out of tolerance (EXPECT=<name> picks another
+# expectation file, EXPECT=none skips the check).
 set -euo pipefail
 
 RT=${1:-30}; shift || true
@@ -78,25 +81,7 @@ echo "device $DEV: depth $DEPTH rotational $(cat /sys/block/ublkb$ID/queue/rotat
      "write_cache '$(cat /sys/block/ublkb$ID/queue/write_cache)'"
 
 summary() {  # fio json, label
-    python3 - "$1" "$2" <<'EOF'
-import json, sys
-d = json.load(open(sys.argv[1]))
-for j in d["jobs"]:
-    for rw in ("read", "write"):
-        s = j[rw]
-        if not s["io_bytes"]:
-            continue
-        c = s["lat_ns"]
-        p = s["clat_ns"].get("percentile", {})
-        print(f'{sys.argv[2]:<16} {j["jobname"]:<16} {rw:<5} '
-              f'iops {s["iops"]:9.1f}  MB/s {s["bw_bytes"]/1e6:7.1f}  '
-              f'lat mean {c["mean"]/1e3:8.1f}  p50 {p.get("50.000000", 0)/1e3:8.1f}  '
-              f'p99 {p.get("99.000000", 0)/1e3:8.1f} us')
-    sy = j.get("sync", {}).get("lat_ns", {})
-    if sy.get("N"):
-        print(f'{sys.argv[2]:<16} {j["jobname"]:<16} fsync n {sy["N"]}  '
-              f'mean {sy["mean"]/1e3:8.1f} us')
-EOF
+    python3 "$HERE/bench/summary.py" "$1" "$2" us "$OUT/results.tsv"
 }
 
 run() {  # name, fio args...
@@ -121,7 +106,9 @@ f0=$(flushes)
 run randwrite-fsync  --rw=randwrite --bs=4k --iodepth=1 --fsync=1
 # a WAL: 4K appends, each followed by fsync
 run seqwrite-fsync   --rw=write --bs=4k --iodepth=1 --fsync=1
-echo "flushes during fsync jobs: $(( $(flushes) - f0 ))"
+nf=$(( $(flushes) - f0 ))
+echo "flushes during fsync jobs: $nf"
+printf 'fsync-jobs\t-\t-\tdevice_flushes\t%s\n' "$nf" >> "$OUT/results.tsv"
 
 # a reader next to a writer that fsyncs every write
 fio --filename="$DEV" --direct=1 --ioengine=io_uring \
@@ -145,3 +132,22 @@ echo "flushes seen by the kernel: $(flushes)" \
 
 cat "$OUT/model.stats"
 echo "results in $OUT"
+
+# which expectations: a stock profile alone (none given = sata-plp)
+set -- $*
+case "$#:${1:-}" in
+0:) auto=sata-plp ;;
+2:--profile) auto=$2 ;;
+*) auto=none ;;
+esac
+expect=${EXPECT:-$auto}
+if [ -n "${EXPECT:-}" ] && [ "$EXPECT" != none ] &&
+   [ ! -f "$HERE/bench/expect/$EXPECT.tsv" ]; then
+    echo "check: no bench/expect/$EXPECT.tsv" >&2
+    exit 1
+elif [ "$expect" = none ] || [ ! -f "$HERE/bench/expect/$expect.tsv" ]; then
+    echo "check: skipped (no expectations for these parameters; EXPECT=<name> to force)"
+else
+    python3 "$HERE/bench/check.py" "$OUT/results.tsv" \
+        "$HERE/bench/expect/$expect.tsv" "$OUT/model.stats"
+fi

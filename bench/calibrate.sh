@@ -6,8 +6,12 @@
 # Creates a memory-backed null_blk (4 GiB, configfs name ublksim<ID>) as
 # the backing store, starts `kublk add -t hdd` on it as /dev/ublkb<ID>,
 # runs the fio jobs below one at a time and prints one summary line per
-# job, then tears everything down. Results (fio json, model stats) go to
-# $OUT.
+# job, then tears everything down. Results (fio json, results.tsv, model
+# stats) go to $OUT. With a stock profile (none given = hgst-7k8), alone
+# or with --cache_mb 0, the run ends with bench/check.py against
+# bench/expect/<profile>[-wt].tsv and exits non-zero if a number is out of
+# tolerance (EXPECT=<name> picks another expectation file, EXPECT=none
+# skips the check).
 set -euo pipefail
 
 RT=${1:-60}; shift || true
@@ -49,25 +53,7 @@ fio --name=fill --filename="$DEV" --rw=write --bs=1M --size=1G --direct=1 \
     --ioengine=libaio --iodepth=4 --output=/dev/null
 
 summary() {  # fio json, label
-    python3 - "$1" "$2" <<'EOF'
-import json, sys
-d = json.load(open(sys.argv[1]))
-for j in d["jobs"]:
-    for rw in ("read", "write"):
-        s = j[rw]
-        if not s["io_bytes"]:
-            continue
-        c = s["clat_ns"]
-        p = c.get("percentile", {})
-        print(f'{sys.argv[2]:<16} {j["jobname"]:<16} {rw:<5} '
-              f'iops {s["iops"]:8.1f}  MB/s {s["bw_bytes"]/1e6:7.1f}  '
-              f'lat mean {c["mean"]/1e6:7.2f}  p50 {p.get("50.000000", 0)/1e6:7.2f}  '
-              f'p99 {p.get("99.000000", 0)/1e6:7.2f} ms')
-    sy = j.get("sync", {}).get("lat_ns", {})
-    if sy.get("N"):
-        print(f'{sys.argv[2]:<16} {j["jobname"]:<16} fsync n {sy["N"]}  '
-              f'mean {sy["mean"]/1e6:7.2f} ms')
-EOF
+    python3 "$HERE/bench/summary.py" "$1" "$2" ms "$OUT/results.tsv"
 }
 
 run() {  # name, fio args...
@@ -89,17 +75,21 @@ run seqwrite-1m-qd4 --rw=write --bs=1M --iodepth=4
 f0=$(flushes)
 run randwrite-qd1   --rw=randwrite --bs=4k --iodepth=1
 timed_flush() {  # label: one flush of whatever the previous job left dirty
-    python3 - "$DEV" "$1" <<'EOF'
+    python3 - "$DEV" "$1" "$OUT/results.tsv" <<'EOF'
 import os, sys, time
 fd = os.open(sys.argv[1], os.O_WRONLY)
 t = time.monotonic(); os.fsync(fd); t = time.monotonic() - t
 print(f"flush after {sys.argv[2]}: {t:.2f} s")
+with open(sys.argv[3], "a") as f:
+    f.write(f"flush-after\t{sys.argv[2]}\t-\tseconds\t{t:.3f}\n")
 EOF
 }
 # timed on its own so it doesn't land inside the next job
 timed_flush randwrite-qd1
 run randwrite-fsync --rw=randwrite --bs=4k --iodepth=1 --fsync=1
-echo "flushes during write jobs: $(( $(flushes) - f0 ))"
+nf=$(( $(flushes) - f0 ))
+echo "flushes during write jobs: $nf"
+printf 'write-jobs\t-\t-\tdevice_flushes\t%s\n' "$nf" >> "$OUT/results.tsv"
 
 # a reader next to a writer that fsyncs every write
 fio --filename="$DEV" --direct=1 --ioengine=libaio \
@@ -131,3 +121,24 @@ timed_flush read-vs-seq
 
 cat "$OUT/model.stats"
 echo "results in $OUT"
+
+# which expectations: a stock profile, alone or with the cache off
+set -- $*
+case "$#:${1:-}:${3:-}" in
+0::) auto=hgst-7k8 ;;
+2:--cache_mb:) [ "$2" = 0 ] && auto=hgst-7k8-wt || auto=none ;;
+2:--profile:) auto=$2 ;;
+4:--profile:--cache_mb) [ "$4" = 0 ] && auto=$2-wt || auto=none ;;
+*) auto=none ;;
+esac
+expect=${EXPECT:-$auto}
+if [ -n "${EXPECT:-}" ] && [ "$EXPECT" != none ] &&
+   [ ! -f "$HERE/bench/expect/$EXPECT.tsv" ]; then
+    echo "check: no bench/expect/$EXPECT.tsv" >&2
+    exit 1
+elif [ "$expect" = none ] || [ ! -f "$HERE/bench/expect/$expect.tsv" ]; then
+    echo "check: skipped (no expectations for these parameters; EXPECT=<name> to force)"
+else
+    python3 "$HERE/bench/check.py" "$OUT/results.tsv" \
+        "$HERE/bench/expect/$expect.tsv" "$OUT/model.stats"
+fi

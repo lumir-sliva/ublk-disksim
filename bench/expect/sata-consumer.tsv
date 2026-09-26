@@ -1,0 +1,10 @@
+# Samsung 870 EVO 1 TB (consumer SATA, no power-loss protection)
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	77	0.1	spec: 13K IOPS QD1 read
+randread-qd32	randread-qd32	read	iops	~	98000	0.1	spec: 98K IOPS 4K random read
+seqread-128k	seqread-128k	read	mbps	~	560	0.1	spec: 560 MB/s
+seqwrite-128k	seqwrite-128k	write	mbps	~	530	0.1	spec: 530 MB/s
+randwrite-qd32	randwrite-qd32	write	iops	~	12000	0.15	estimate: no published full-drive figure
+randwrite-fsync	randwrite-fsync	write	iops	~	280	0.15	published: 248-311 4K write+fsync/s
+blocking	reader	read	lat_p50_us	>=	3000	0	model: reads wait behind the non-queued flush
+stats	-	-	late_us_p99	<=	150	0	completions fire within 150 us of the model's schedule

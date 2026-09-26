@@ -1,0 +1,8 @@
+# Samsung PM9A3 1.92 TB (enterprise NVMe, PLP, no VWC). Not checked: reads
+# above ~190K IOPS / ~4 GB/s (one server thread) and sync writes (below the floor).
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	80	0.1	spec: 80 us QD1 read
+seqwrite-128k	seqwrite-128k	write	mbps	~	2700	0.1	spec: 2700 MB/s
+randwrite-qd32	randwrite-qd32	write	iops	~	130000	0.1	spec: 130K IOPS steady-state random write
+fsync-jobs	-	-	device_flushes	=	0	0	datasheet: no volatile write cache
+stats	-	-	late_us_p99	<=	600	0	within 600 us: the QD32/QD128 jobs run one server thread at its limit (~200K IOPS)
