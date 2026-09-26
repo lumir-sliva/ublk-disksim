@@ -1,0 +1,183 @@
+# Guide: running ublk-disksim
+
+How to build it, bring up a modelled disk, put software on it, read what
+the model did, and fit it to a drive you care about.
+
+## 1. Requirements
+
+- Linux with the `ublk_drv` module (6.0+; developed on 6.17). Check:
+  `modinfo ublk_drv`.
+- liburing headers: `apt install liburing-dev` (Debian/Ubuntu) or
+  `dnf install liburing-devel`.
+- root, for `/dev/ublk-control` and for creating the RAM backing device.
+- fio, for `bench/calibrate.sh`.
+
+## 2. Build
+
+```bash
+make            # produces ./kublk
+./kublk help    # all targets and their options
+```
+
+`stripe.c` is not built (it needs io_uring opcodes newer than liburing
+2.5); everything else from the kernel selftest server is.
+
+## 3. Bring up a disk
+
+The model keeps no data of its own: it passes every read and write to a
+backing device and only delays the completion. Use something fast that
+accepts `O_DIRECT` I/O with 512-byte alignment, normally RAM.
+
+**Backing store, option A: null_blk (memory backed).**
+
+```bash
+sudo modprobe null_blk nr_devices=0
+sudo mount -t configfs none /sys/kernel/config 2>/dev/null || true
+d=/sys/kernel/config/nullb/simback0
+sudo mkdir $d
+echo 8192 | sudo tee $d/size            # MiB
+echo 512  | sudo tee $d/blocksize
+echo 1    | sudo tee $d/memory_backed
+echo 2    | sudo tee $d/queue_mode
+echo 1    | sudo tee $d/power           # -> /dev/simback0
+```
+
+**Option B: brd.** `sudo modprobe brd rd_nr=1 rd_size=$((8*1024*1024))`
+gives `/dev/ram0` (size in KiB).
+
+Memory is only used as data is written.
+
+**Start the model.**
+
+```bash
+sudo modprobe ublk_drv
+sudo ./kublk add -t hdd -n 0 -q 1 -d 32 --profile hgst-7k8 \
+     --stats /tmp/ublk0.stats /dev/simback0
+# -> /dev/ublkb0
+cat /sys/block/ublkb0/queue/rotational    # 1
+cat /sys/block/ublkb0/queue/write_cache   # "write back" (cache on)
+```
+
+- `-q 1`: one hardware queue. Required: one actuator, one thread.
+- `-d 32`: queue depth, as SATA NCQ.
+- `-n N`: device id, gives `/dev/ublkbN`. Omit to get the next free one.
+- Model options come after the common ones, each as `--name value`
+  (table in the README). `--profile` is applied first; anything else
+  overrides it, in any order.
+
+**Write cache off** (like `hdparm -W0`, or a controller that hides the
+cache):
+
+```bash
+sudo ./kublk add -t hdd -n 1 -q 1 -d 32 --cache_mb 0 /dev/simback1
+cat /sys/block/ublkb1/queue/write_cache   # "write through"
+```
+
+The kernel then never sends flushes to it, and every write pays the
+mechanical cost before it completes.
+
+**List and remove.**
+
+```bash
+sudo ./kublk list
+sudo ./kublk del -n 0          # or: del --all
+echo 0 | sudo tee /sys/kernel/config/nullb/simback0/power
+sudo rmdir /sys/kernel/config/nullb/simback0
+```
+
+The server runs as a daemon per device; `del` stops it and removes the
+device. Without the recovery options (`kublk help`), a killed daemon
+means failed I/O on the device.
+
+## 4. Put software on it
+
+It is a normal block device:
+
+```bash
+sudo fio --name=t --filename=/dev/ublkb0 --direct=1 --ioengine=libaio \
+         --rw=randread --bs=4k --iodepth=1 --runtime=30 --time_based
+sudo mkfs.xfs /dev/ublkb0 && sudo mount /dev/ublkb0 /mnt
+```
+
+Anything that tunes itself by `rotational` (the kernel's I/O scheduler
+choice, databases, storage daemons) sees a spinning disk. `chown` the
+device if the software runs unprivileged.
+
+Stacking works as usual: device-mapper targets (e.g. `dm-log-writes` for
+crash-consistency tests), LVM, md.
+
+## 5. Read what the model did
+
+With `--stats FILE`, the model rewrites FILE once a second:
+
+| field | meaning |
+|---|---|
+| `reads`, `writes` | requests seen |
+| `flushes` | cache flushes completed |
+| `flush_ms_sum`, `flush_ms_max` | time from flush arrival to completion |
+| `flush_dirty_mb_sum` | dirty data present when flushes arrived |
+| `destaged` | cache extents written to the platters |
+| `cache_full_waits` | writes that had to wait for cache space |
+| `blocked_by_flush`, `blocked_ms_sum` | requests held back by a flush in progress, and for how long |
+| `dirty_mb` | dirty data right now |
+
+The kernel's own counters for the device are in
+`/sys/block/ublkbN/stat`; field 16 is flushes completed, field 17 the
+time spent in them (ms).
+
+## 6. Calibrate
+
+`bench/calibrate.sh` creates a fresh 4 GiB null_blk-backed device, runs
+a fixed set of fio jobs and prints one line per job:
+
+```bash
+sudo bench/calibrate.sh 30                       # 30 s per job, profile default
+sudo bench/calibrate.sh 30 --cache_mb 0          # same, cache off
+sudo ID=12 OUT=/tmp/cal bench/calibrate.sh 60 --seek_avg_ms 8.5
+```
+
+Jobs: 4K random read at QD1 and QD32, 1M sequential read, 1M sequential
+write at QD1 and QD4, 4K random write without and with an fsync per
+write, one flush of whatever the random writes left in the cache, and a
+reader next to a flushing writer. Raw fio JSON and the model's stats go
+to `$OUT`.
+
+To imitate another drive:
+
+1. Get its numbers: the spec sheet (RPM, average seek, sustained
+   transfer, buffer size), and if you can, the same fio jobs run on the
+   real drive. On a running system, `/proc/diskstats` (or node_exporter's
+   `node_disk_flush_requests_*`) gives the mean flush time under real
+   load.
+2. Set `--rpm`, `--seek_avg_ms`, `--mbps`; `--cache_mb` for the write
+   cache (vendors rarely publish how much of the buffer caches writes).
+3. Run `calibrate.sh` and compare: random QD1 checks seek + rotation,
+   sequential checks the transfer rate, random QD32 checks reordering,
+   write + fsync checks the flush path.
+4. Add a profile to `profiles[]` in `hdd.c` once it fits.
+
+`--stroke` scales seek distances: a small device models a small span of
+a big disk. Leave it at 1.0 if the software spreads data over the whole
+device.
+
+## 7. Limits and gotchas
+
+- One thread. The destage scan is linear in the number of dirty extents
+  (up to 16k with a 64 MiB cache of 4K writes); fine for one device per
+  core.
+- No data persistence: the backing is RAM. Power-loss behaviour is not
+  modelled; for crash tests, stack `dm-log-writes` on top and replay.
+- One transfer rate and one track size for the whole disk (no zones), no
+  read cache beyond sequential read-ahead, no firmware cap on dirty data
+  (a flush after filling 64 MiB with random writes takes ~11 s).
+- The model is only as good as its calibration; say which profile and
+  parameters produced a number when you report it.
+
+## 8. Troubleshooting
+
+| symptom | cause |
+|---|---|
+| `can't open /dev/ublk-control` | `modprobe ublk_drv`, run as root |
+| `hdd: one actuator, needs -q 1` | pass `-q 1` and no `--nthreads` |
+| I/O errors with a 4K-block backing device | the model is 512e: use a backing store with 512-byte blocks |
+| build fails on `IORING_OP_*` | liburing too old; the Makefile already leaves out `stripe.c` |

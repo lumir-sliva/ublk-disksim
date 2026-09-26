@@ -89,9 +89,12 @@ sudo ./kublk del -n <id>
 The model is single-threaded: use `-q 1` (one actuator) and queue depth 32
 to match SATA NCQ.
 
-`bench/calibrate.sh` runs fio micro-benchmarks (random/sequential reads,
-cached and synced writes, a reader next to a flushing writer) on a fresh
-device backed by a 4 GiB null_blk and prints one line per job.
+`bench/calibrate.sh` runs fio micro-benchmarks (random/sequential reads
+and writes, cached and synced writes, a reader next to a flushing writer)
+on a fresh device backed by a 4 GiB null_blk and prints one line per job.
+
+Step-by-step setup, using it under other software, the stats file, and
+fitting the model to another drive: [docs/GUIDE.md](docs/GUIDE.md).
 
 ## Layout
 
@@ -99,7 +102,7 @@ device backed by a 4 GiB null_blk and prints one line per job.
 |---|---|
 | `kublk.c`, `kublk.h`, `utils.h`, `ublk_dep.h`, `common.c`, `null.c`, `file_backed.c`, `fault_inject.c`, `stripe.c` | linux v6.17 selftests, small changes marked in git history |
 | `include/linux/ublk_cmd.h` | linux v6.17 uapi, overrides older distro headers |
-| `hdd.c`, `bench/` | this project |
+| `hdd.c`, `bench/`, `docs/` | this project |
 
 `stripe.c` is not built: it needs io_uring opcodes newer than Ubuntu
 24.04's liburing 2.5 headers.
