@@ -62,41 +62,9 @@ struct fault_inject_ctx {
 	unsigned long   delay_us;
 };
 
-struct hdd_params {
-	/* hdd timing model, see hdd.c */
-	unsigned	rpm;
-	double		seek_min_ms;	/* track to track */
-	double		seek_avg_ms;	/* random, uniform over the stroke */
-	double		mbps;		/* media transfer */
-	double		iface_mbps;	/* host link */
-	double		iface_us;	/* per-command overhead */
-	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
-	unsigned	ncq;		/* requests considered for reordering */
-	double		max_wait_ms;	/* a request passed over this long goes next */
-	double		stroke;		/* fraction of the full stroke the device spans */
-	unsigned long long seed;
-	char		stats[256];	/* stats file, rewritten once a second */
-};
-
-struct ssd_params {
-	/* ssd timing model, see ssd.c */
-	unsigned	nvme;		/* 0: SATA (non-queued FLUSH), 1: NVMe */
-	double		iface_mbps;	/* host link */
-	double		cmd_us;		/* link time per command */
-	double		iface_us;	/* controller latency per command */
-	unsigned	dies;
-	unsigned	page_kb;	/* program unit */
-	double		tr_us;		/* page read, incl. ECC and lookup */
-	double		ch_mbps;	/* flash channel */
-	double		tprog_us;	/* page program */
-	double		waf;		/* program units per random-write page */
-	unsigned	buf_mb;		/* write buffer */
-	unsigned	plp;		/* buffer survives power loss */
-	unsigned	vwc;		/* advertise a volatile write cache */
-	double		flush_us;	/* FLUSH cost once drained */
-	double		floor_us;	/* host overhead to subtract */
-	char		stats[256];	/* stats file, rewritten once a second */
-};
+/* timing model parameters (hdd, ssd targets) */
+#include "hdd_model.h"
+#include "ssd_model.h"
 
 struct dev_ctx {
 	char tgt_type[16];
