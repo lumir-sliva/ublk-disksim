@@ -189,6 +189,7 @@ static int best_dirty_window(struct hdd_model *m, __u64 free_at,
 	int idx[HDD_WB_WINDOW_MAX], n = 0, w = (int)m->p.wb_window, i, j;
 	int best = -1;
 
+	assert(w > 0 && w <= HDD_WB_WINDOW_MAX);
 	for (i = 0; i < m->ndirty; i++) {
 		__u64 a = m->dirty[i].seq;
 

@@ -54,7 +54,8 @@ unit:
 | ssd | full buffer | writes wait, and all complete |
 
 **Randomized tests:** 100 hdd and 100 ssd runs with random parameters
-(cache size, NCQ window, rpm, age limit; SATA/NVMe, PLP, VWC, dies, page
+(cache size, NCQ window, rpm, age limit, write-back window; SATA/NVMe,
+PLP, VWC, dies, page
 size, buffer, WAF, floor) and random workloads (reads, writes, flushes,
 sizes up to 1 MiB, partly sequential, random gaps between arrivals, at
 most a queue depth in flight). The simulator advances the clock to each
@@ -79,7 +80,8 @@ The test build also compiles the hdd model with `-DMODEL_CHECK_SPTF`,
 which checks every write-back choice against a scan of the whole dirty
 set.
 
-**Result:** 49,751,082 checks, 0 failures.
+**Result:** 36,291,960 checks, 0 failures (the count depends on
+the randomized draws, so it changes whenever a parameter is added).
 
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
 tree:
@@ -137,6 +139,7 @@ model). A run that misses exits non-zero.
 |---|---|---|
 | `hgst-7k8`, cache on | spec: seek + latency 12.2 ms, 205 MB/s; typical NCQ ~200 IOPS; production flush 13–16 ms | QD1 read 12.27 ms, QD32 195 IOPS, seq read/write 196/207 MB/s, flush 12.1 ms: all within tolerance |
 | `hgst-7k8`, cache off | spec; a revolution per write at QD1 | QD1 read 12.4 ms, write 12.4 ms, seq write QD1/QD4 78/205 MB/s, no device flushes |
+| `barracuda-2t`, cache on | one real ST2000DM006 through NTFS: QD1 read 17.5 ms, QD32 94 IOPS, seq 143/132 MB/s, random write 124 IOPS, flush after 8 / 64 writes 127 / 630 ms | QD1 17.3 ms, QD32 82, seq 139/150, random write 108, flush after 8 / 64 103 / 656 ms: all within tolerance |
 | `sata-plp` (PM883) | datasheet; published 15.5K synced writes/s | QD1 read 121.6 µs (120), QD32 96.4K (98K), seq 553/553 MB/s (550/520), QD1 write 41.9 µs (40), steady random write 24.6K (25K), synced writes 14.6K/s |
 | `nvme-plp` (PM9A3) | datasheet (no VWC) | QD1 read 82.4 µs (80), seq write 2537 MB/s (2700), steady random write 124K (130K), no flushes sent |
 | `sata-consumer` (870 EVO) | datasheet; published 248–311 synced writes/s | QD1 read 78.9 µs (77), QD32 96.8K (98K), seq 553/553 MB/s (560/530), steady random write 11.7K (~12K est.), synced writes 260/s |
@@ -227,5 +230,6 @@ make check                                   # model tests, anywhere
 sudo bench/integrity.sh                      # data integrity
 sudo bench/calibrate.sh 30                   # hgst-7k8, checked
 sudo bench/calibrate.sh 30 --cache_mb 0      # checked against hgst-7k8-wt
+sudo bench/calibrate.sh 30 --profile barracuda-2t   # checked against barracuda-2t
 sudo bench/calibrate_ssd.sh 30 --profile sata-plp   # likewise per profile
 ```

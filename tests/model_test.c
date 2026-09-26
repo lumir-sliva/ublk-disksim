@@ -555,11 +555,15 @@ static void hdd_wb_window(void)
 	/* one write-back at a random position: average seek + half a turn */
 	double one = p.seek_avg_ms * 1e6 + rev_ns(&p) / 2 + xfer_ns_of(p.mbps, 4096);
 	double t0, t4, t1;
+	__u64 saved = rng_state;
 
+	/* the same 64 addresses each time: only the window differs */
 	p.wb_window = 0;
 	t0 = hdd_flush_after_64(&p);
+	rng_state = saved;
 	p.wb_window = 4;
 	t4 = hdd_flush_after_64(&p);
+	rng_state = saved;
 	p.wb_window = 1;
 	t1 = hdd_flush_after_64(&p);
 
