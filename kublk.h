@@ -62,6 +62,21 @@ struct fault_inject_ctx {
 	unsigned long   delay_us;
 };
 
+struct hdd_params {
+	/* hdd timing model, see hdd.c */
+	unsigned	rpm;
+	double		seek_min_ms;	/* track to track */
+	double		seek_avg_ms;	/* random, uniform over the stroke */
+	double		mbps;		/* media transfer */
+	double		iface_mbps;	/* host link */
+	double		iface_us;	/* per-command overhead */
+	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
+	unsigned	ncq;		/* requests considered for reordering */
+	double		stroke;		/* fraction of the full stroke the device spans */
+	unsigned long long seed;
+	char		stats[256];	/* stats file, rewritten once a second */
+};
+
 struct dev_ctx {
 	char tgt_type[16];
 	unsigned long flags;
@@ -91,6 +106,7 @@ struct dev_ctx {
 	union {
 		struct stripe_ctx 	stripe;
 		struct fault_inject_ctx fault_inject;
+		struct hdd_params	hdd;
 	};
 };
 
@@ -417,6 +433,7 @@ extern const struct ublk_tgt_ops null_tgt_ops;
 extern const struct ublk_tgt_ops loop_tgt_ops;
 extern const struct ublk_tgt_ops stripe_tgt_ops;
 extern const struct ublk_tgt_ops fault_inject_tgt_ops;
+extern const struct ublk_tgt_ops hdd_tgt_ops;
 
 void backing_file_tgt_deinit(struct ublk_dev *dev);
 int backing_file_tgt_init(struct ublk_dev *dev);

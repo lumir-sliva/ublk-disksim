@@ -11,8 +11,8 @@ unsigned int ublk_dbg_mask = UBLK_LOG;
 static const struct ublk_tgt_ops *tgt_ops_list[] = {
 	&null_tgt_ops,
 	&loop_tgt_ops,
-	&stripe_tgt_ops,
 	&fault_inject_tgt_ops,
+	&hdd_tgt_ops,
 };
 
 static const struct ublk_tgt_ops *ublk_find_tgt(const char *name)
@@ -725,7 +725,8 @@ static inline void ublksrv_handle_tgt_cqe(struct ublk_thread *t,
 					  struct ublk_queue *q,
 					  struct io_uring_cqe *cqe)
 {
-	if (cqe->res < 0 && cqe->res != -EAGAIN)
+	/* timeout SQEs (fault_inject, hdd) complete with -ETIME by design */
+	if (cqe->res < 0 && cqe->res != -EAGAIN && cqe->res != -ETIME)
 		ublk_err("%s: failed tgt io: res %d qid %u tag %u, cmd_op %u\n",
 			__func__, cqe->res, q->q_id,
 			user_data_to_tag(cqe->user_data),
