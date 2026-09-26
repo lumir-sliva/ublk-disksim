@@ -82,6 +82,8 @@ flushes() { awk '{print $16}' "/sys/block/ublkb$ID/stat"; }
 run randread-qd1    --rw=randread --bs=4k --iodepth=1
 run randread-qd32   --rw=randread --bs=4k --iodepth=32
 run seqread-1m      --rw=read --bs=1M --iodepth=1
+run seqwrite-1m-qd1 --rw=write --bs=1M --iodepth=1
+run seqwrite-1m-qd4 --rw=write --bs=1M --iodepth=4
 f0=$(flushes)
 run randwrite-qd1   --rw=randwrite --bs=4k --iodepth=1
 # one flush with whatever randwrite-qd1 left dirty, timed on its own so it

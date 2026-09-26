@@ -48,6 +48,7 @@ struct hdd_req {
 
 struct hdd_ext {
 	__u64 lba, nr;		/* sectors */
+	__u64 added;		/* when it entered the cache */
 };
 
 struct hdd_model {
@@ -111,19 +112,22 @@ static double phase_at(struct hdd_model *m, double t)
 
 /*
  * Time from `t` until the head can start transferring `to`, coming from
- * the end of the previous transfer at `from`. A request that continues
- * where the head is costs nothing (the drive's read-ahead / write
- * coalescing covers the host turnaround). Otherwise: seek (none within the
- * same track), then wait for the sector to come round. Sector angle is
- * lba / spt, so a transfer ending at lba e ends at phase e / spt, and
- * choosing the minimum of this over queued requests is rotational
- * position ordering.
+ * the end of the previous transfer at `from`. If `contig` and the request
+ * continues where the head is, it costs nothing: reads (read-ahead),
+ * destage (the drive's own queue) and writes that were already queued
+ * when the previous transfer ended. Otherwise: seek (none within the same
+ * track), then wait for the sector to come round; for a write-through
+ * write arriving after the previous one completed, that is most of a
+ * revolution, as on a real drive. Sector angle is lba / spt, so a
+ * transfer ending at lba e ends at phase e / spt, and choosing the minimum
+ * of this over queued requests is rotational position ordering.
  */
-static double pos_ns(struct hdd_model *m, double t, __u64 from, __u64 to)
+static double pos_ns(struct hdd_model *m, double t, __u64 from, __u64 to,
+		     int contig)
 {
 	double seek = 0, ang, rot;
 
-	if (from == to)
+	if (from == to && contig)
 		return 0;
 	if ((__u64)(from / m->spt) != (__u64)(to / m->spt)) {
 		double d = fabs((double)to - (double)from) /
@@ -178,7 +182,7 @@ static void arm_mech(struct hdd_model *m)
 }
 
 /* add [lba, lba+nr) to the dirty set, merging overlapping/adjacent extents */
-static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr)
+static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 {
 	__u64 s = lba, e = lba + nr;
 	int i = 0;
@@ -204,6 +208,7 @@ static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr)
 	}
 	m->dirty[m->ndirty].lba = s;
 	m->dirty[m->ndirty].nr = e - s;
+	m->dirty[m->ndirty].added = t;
 	m->ndirty++;
 	m->dirty_bytes += (e - s) << 9;
 }
@@ -235,13 +240,26 @@ static void write_stats(struct hdd_model *m, __u64 now)
 
 static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now);
 
-/* run the actuator up to `now` */
+static __u64 max_u64(__u64 a, __u64 b)
+{
+	return a > b ? a : b;
+}
+
+/*
+ * Run the actuator up to `now`. The actuator keeps its own timeline:
+ * each operation starts when the actuator became free or when its request
+ * arrived, whichever is later, not when this function happens to run, so
+ * the model doesn't depend on how promptly timers fire. Completions that
+ * fall in the (recent) past fire at once.
+ */
 static void pump(struct hdd_model *m)
 {
 	__u64 now = now_ns();
 
 	for (;;) {
-		if (m->busy_until > now) {
+		__u64 free_at = m->busy_until;
+
+		if (free_at > now) {
 			arm_mech(m);
 			break;
 		}
@@ -250,41 +268,48 @@ static void pump(struct hdd_model *m)
 		while (m->nwait && m->dirty_bytes + (m->wait[0].nr << 9) <=
 				m->cache_bytes) {
 			struct hdd_req w = m->wait[0];
+			__u64 t = max_u64(free_at, w.arrive);
 
 			memmove(m->wait, m->wait + 1, --m->nwait * sizeof(*m->wait));
-			dirty_add(m, w.lba, w.nr);
-			submit_done(m, w.tag, w.op, now + host_ns(m, w.nr));
+			dirty_add(m, w.lba, w.nr, t);
+			submit_done(m, w.tag, w.op, t + host_ns(m, w.nr));
 		}
 
 		if (m->npend) {
 			int n = m->npend < (int)m->p.ncq ? m->npend : (int)m->p.ncq;
-			int i, best = 0;
-			double c, bc = pos_ns(m, now, m->head, m->pend[0].lba);
+			int i, best = -1;
+			double ready, bready = 0;
 			struct hdd_req r;
 
-			/* shortest positioning time first (NCQ with RPO) */
-			for (i = 1; i < n; i++) {
-				c = pos_ns(m, now, m->head, m->pend[i].lba);
-				if (c < bc) {
-					bc = c;
+			/* earliest start of transfer first (NCQ with RPO) */
+			for (i = 0; i < n; i++) {
+				const struct hdd_req *c = &m->pend[i];
+				__u64 t = max_u64(free_at, c->arrive);
+				int contig = c->op == UBLK_IO_OP_READ ||
+					c->arrive <= free_at;
+
+				ready = t + pos_ns(m, t, m->head, c->lba, contig);
+				if (best < 0 || ready < bready) {
+					bready = ready;
 					best = i;
 				}
 			}
 			r = m->pend[best];
 			memmove(m->pend + best, m->pend + best + 1,
 				(--m->npend - best) * sizeof(*m->pend));
-			m->busy_until = now + (__u64)bc + xfer_ns(m->p.mbps, r.nr);
+			m->busy_until = (__u64)bready + xfer_ns(m->p.mbps, r.nr);
 			m->head = r.lba + r.nr;
 			submit_done(m, r.tag, r.op, m->busy_until);
 			continue;
 		}
 
 		if (m->flush_tag >= 0 && !m->ndirty && !m->nwait) {
-			__u64 d = now - m->flush_start;
+			__u64 t = max_u64(free_at, m->flush_start);
+			__u64 d = t - m->flush_start;
 			struct hdd_req *held;
 			int i, n = m->nblocked;
 
-			submit_done(m, m->flush_tag, UBLK_IO_OP_FLUSH, now);
+			submit_done(m, m->flush_tag, UBLK_IO_OP_FLUSH, t);
 			m->n_flush++;
 			m->flush_ns_sum += d;
 			if (d > m->flush_ns_max)
@@ -297,29 +322,31 @@ static void pump(struct hdd_model *m)
 			m->nblocked = 0;
 			for (i = 0; i < n; i++) {
 				m->n_blocked++;
-				m->blocked_ns_sum += now - held[i].arrive;
-				arrive(m, held[i], now);
+				m->blocked_ns_sum += t - held[i].arrive;
+				arrive(m, held[i], t);
 			}
 			free(held);
 			continue;
 		}
 
 		if (m->ndirty) {
-			int i, best = 0;
-			double c, bc = pos_ns(m, now, m->head, m->dirty[0].lba);
+			int i, best = -1;
+			double ready, bready = 0;
 			struct hdd_ext x;
 
-			for (i = 1; i < m->ndirty; i++) {
-				c = pos_ns(m, now, m->head, m->dirty[i].lba);
-				if (c < bc) {
-					bc = c;
+			for (i = 0; i < m->ndirty; i++) {
+				__u64 t = max_u64(free_at, m->dirty[i].added);
+
+				ready = t + pos_ns(m, t, m->head, m->dirty[i].lba, 1);
+				if (best < 0 || ready < bready) {
+					bready = ready;
 					best = i;
 				}
 			}
 			x = m->dirty[best];
 			m->dirty[best] = m->dirty[--m->ndirty];
 			m->dirty_bytes -= x.nr << 9;
-			m->busy_until = now + (__u64)bc + xfer_ns(m->p.mbps, x.nr);
+			m->busy_until = (__u64)bready + xfer_ns(m->p.mbps, x.nr);
 			m->head = x.lba + x.nr;
 			m->n_destage++;
 			continue;
@@ -329,10 +356,11 @@ static void pump(struct hdd_model *m)
 	write_stats(m, now);
 }
 
+/* a request reaches the drive at `now` (or is released by a flush then) */
 static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 {
+	r.arrive = now;
 	if (m->flush_tag >= 0) {
-		r.arrive = now;
 		m->blocked[m->nblocked++] = r;
 		return;
 	}
@@ -348,7 +376,7 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 			m->pend[m->npend++] = r;
 		} else if (!m->nwait && m->dirty_bytes + (r.nr << 9) <=
 				m->cache_bytes) {
-			dirty_add(m, r.lba, r.nr);
+			dirty_add(m, r.lba, r.nr, now);
 			submit_done(m, r.tag, r.op, now + host_ns(m, r.nr));
 		} else {
 			m->n_cache_full++;

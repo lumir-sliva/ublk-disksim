@@ -64,12 +64,14 @@ device, so seeks span the full stroke):
 | test | model | reference |
 |---|---|---|
 | 4K random read QD1 | 80 IOPS, 12.5 ms mean | 8.0 + 4.16 ms = 12.2 ms (spec) |
-| 4K random read QD32 | 200 IOPS | ~200 for 7200 rpm SATA with NCQ (typical) |
-| 1M sequential read QD1 | 185 MB/s | 205 MB/s internal, 255 MB/s outer (spec) |
-| 4K random write + fsync | 80/s, flush 12.5 ms | 13–16 ms median per flush on these drives in production, at 0.4–5 flushes/s with ~4 larger writes per flush |
-| flush of a full 64 MiB cache of random 4K writes | 16.7 s | unknown |
-| 4K read QD1 next to a write+fsync QD1 job | 40 IOPS, 24.5 ms p50 | reads wait for the flush |
-| write-through, 4K random write QD1 | 80 IOPS, 0 flushes at the device | |
+| 4K random read QD32 | 207 IOPS | ~200 for 7200 rpm SATA with NCQ (typical) |
+| 1M sequential read QD1 | 186 MB/s | 205 MB/s internal, 255 MB/s outer (spec) |
+| 1M sequential write QD1 / QD4, cache on | 207 / 204 MB/s | |
+| 1M sequential write QD1 / QD4, cache off | 78 / 205 MB/s | QD1 misses a revolution per write |
+| 4K random write + fsync | 80/s, flush 12.4 ms | 13–16 ms median per flush on these drives in production, at 0.4–5 flushes/s with ~4 larger writes per flush |
+| flush of a full 64 MiB cache of random 4K writes | 10.8 s | unknown |
+| 4K read QD1 next to a write+fsync QD1 job | 41 IOPS, 24.3 ms p50 | reads wait for the flush |
+| cache off, 4K random write QD1 | 80 IOPS, 0 flushes at the device | |
 
 ## Build and run
 
