@@ -4,7 +4,7 @@
 # usage: sudo bench/calibrate_ssd.sh [runtime_s=30] [extra kublk ssd options...]
 #   e.g. sudo bench/calibrate_ssd.sh 30 --profile nvme-plp
 #
-# Creates a memory-backed null_blk (4 GiB, configfs name ublkssd0) as the
+# Creates a memory-backed null_blk (4 GiB, configfs name ublkssd<ID>) as the
 # backing store and measures the host's overhead first: 4K random read
 # latency at QD1 through the ssd target set up as a fixed 100 us device,
 # minus 100 us, minus the same read on the null_blk alone. It goes through
@@ -21,25 +21,25 @@ RT=${1:-30}; shift || true
 ID=${ID:-12}
 OUT=${OUT:-/tmp/ublk-disksim-cal-ssd-$(date +%s)}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-CFG=/sys/kernel/config/nullb/ublkssd0
-BACK=/dev/ublkssd0      # null_blk configfs devices are named after the dir
+CFG=/sys/kernel/config/nullb/ublkssd$ID
+BACK=/dev/ublkssd$ID    # null_blk configfs devices are named after the dir
 DEV=/dev/ublkb$ID
 case " $* " in *nvme*) DEPTH=${DEPTH:-128} ;; *) DEPTH=${DEPTH:-32} ;; esac
 mkdir -p "$OUT"
 
-cleanup() {
-    "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true
+cleanup() {  # only what this run created
+    [ -n "${ADDED:-}" ] && { "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true; }
     if [ -d "$CFG" ]; then
         echo 0 > "$CFG/power"
         rmdir "$CFG"
     fi
 }
-trap cleanup EXIT
 
 modprobe null_blk nr_devices=0 2>/dev/null || true
 modprobe ublk_drv
 mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
-mkdir "$CFG"
+mkdir "$CFG"            # fails if another run uses this ID: nothing to undo
+trap cleanup EXIT
 for kv in size=4096 blocksize=512 memory_backed=1 irqmode=0 queue_mode=2; do
     echo "${kv#*=}" > "$CFG/${kv%%=*}"
 done
@@ -61,15 +61,18 @@ if [ -z "${FLOOR_US:-}" ]; then
         --tr_us 100 --iface_us 0 --cmd_us 0 --ch_mbps 1e6 --iface_mbps 1e6 \
         --floor_us 0 \
         "$BACK" >/dev/null
+    ADDED=1
     udevadm settle
     fixed=$(mean_lat_us "$DEV")
     "$HERE/kublk" del -n "$ID"
+    ADDED=
     FLOOR_US=$(python3 -c "print(max(0, round($fixed - 100 - $raw, 1)))")
     echo "floor: fixed 100 us device $fixed us - 100 - null_blk $raw us = $FLOOR_US us"
 fi
 
 "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --floor_us "$FLOOR_US" \
     --stats "$OUT/model.stats" "$@" "$BACK" | tee "$OUT/kublk.txt"
+ADDED=1
 udevadm settle
 echo "device $DEV: depth $DEPTH rotational $(cat /sys/block/ublkb$ID/queue/rotational)" \
      "write_cache '$(cat /sys/block/ublkb$ID/queue/write_cache)'"

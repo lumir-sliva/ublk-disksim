@@ -119,7 +119,7 @@ struct ssd_model {
 	int sflush_closed;
 	int dirty;		/* data admitted since the last flush took it */
 	__u64 sflush_seq;
-	struct ssd_req *held;
+	struct ssd_req *held, *spare;	/* spare: swapped in on replay */
 	int nheld;
 	__u64 block_until;
 	__u64 last_done;
@@ -375,19 +375,19 @@ static void start(struct ssd_model *m, struct ssd_req r);
 /* the pending SATA flush is done at `when`: release what it held */
 static void sata_flush_finish(struct ssd_model *m, __u64 when)
 {
-	struct ssd_req *held;
+	struct ssd_req *held = m->held;
 	int i, n = m->nheld;
 
 	flush_done(m, &m->sflush, when);
 	m->sflush_tag = -1;
 	m->block_until = max_u64(m->block_until, when);
 
-	held = malloc(n * sizeof(*held) + 1);
-	memcpy(held, m->held, n * sizeof(*held));
+	/* replay; anything a replayed flush holds again goes to the spare */
+	m->held = m->spare;
+	m->spare = held;
 	m->nheld = 0;
 	for (i = 0; i < n; i++)
 		start(m, held[i]);
-	free(held);
 }
 
 /*
@@ -799,6 +799,7 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	m->heap = calloc(m->cap_pg, sizeof(*m->heap));
 	m->wait = calloc(depth, sizeof(*m->wait));
 	m->held = calloc(depth, sizeof(*m->held));
+	m->spare = calloc(depth, sizeof(*m->spare));
 	m->nflush = calloc(depth, sizeof(*m->nflush));
 	m->sflush_tag = -1;
 	m->timer_at = ~0ULL;
@@ -840,6 +841,7 @@ static void ssd_deinit_tgt(struct ublk_dev *dev)
 	free(m->heap);
 	free(m->wait);
 	free(m->held);
+	free(m->spare);
 	free(m->nflush);
 	free(m);
 }

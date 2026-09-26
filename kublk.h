@@ -72,6 +72,7 @@ struct hdd_params {
 	double		iface_us;	/* per-command overhead */
 	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
 	unsigned	ncq;		/* requests considered for reordering */
+	double		max_wait_ms;	/* a request passed over this long goes next */
 	double		stroke;		/* fraction of the full stroke the device spans */
 	unsigned long long seed;
 	char		stats[256];	/* stats file, rewritten once a second */

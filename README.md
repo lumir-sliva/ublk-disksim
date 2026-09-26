@@ -18,13 +18,20 @@ What it models (see the header of `hdd.c`):
 
 - one actuator: requests are served one at a time,
   shortest-positioning-time-first among the oldest `ncq` waiting ones
-  (NCQ with rotational position ordering);
+  (NCQ with rotational position ordering), except that a request passed
+  over for `max_wait_ms` goes next;
 - positioning = seek (sqrt curve over the distance, none within a track) +
   waiting for the sector to rotate under the head (sector angle from the
-  LBA, platter phase from the clock), then media transfer; a request
-  starting where the head is pays no positioning;
+  LBA, platter phase from the clock), then media transfer; a read, a
+  write-back or an already queued write starting where the head is pays
+  no positioning (a write-through write that arrives after the previous
+  one finished waits for its sector to come round);
 - volatile write cache: writes complete after the host transfer and are
-  destaged when the actuator is idle; a full cache makes writes wait;
+  written back one track at most per operation, when the actuator is
+  idle, and once the cache is 3/4 full or writes wait for space also in
+  turn with queued requests (one write-back per request served, one that
+  started while the queue was empty counts); a full cache makes writes
+  wait;
 - FLUSH as SATA `FLUSH CACHE`: non-queued. Queued requests finish, the
   whole cache is destaged, and everything that arrives meanwhile, reads
   included, waits;
@@ -34,7 +41,9 @@ What it models (see the header of `hdd.c`):
 
 Not modelled: zoned transfer rates (one rate, one track size), read cache
 and read-ahead beyond "sequential costs nothing", firmware limits on dirty
-data, destage idle timers.
+data, destage idle timers. The 3/4 threshold and the one-for-one turns of
+forced write-back, and the 500 ms age limit, are assumptions; drives
+don't publish theirs.
 
 Parameters (`kublk add -t hdd ... --<name> <value>`):
 
@@ -45,12 +54,13 @@ Parameters (`kublk add -t hdd ... --<name> <value>`):
 | `--seek_min_ms` | track-to-track seek | 0.6 |
 | `--seek_avg_ms` | average random seek | 8.0 |
 | `--mbps` | media transfer rate | 205 |
-| `--iface_mbps` | host link rate | 600 |
-| `--iface_us` | per-command overhead | 30 |
+| `--iface_mbps` | host link rate (cached writes) | 600 |
+| `--iface_us` | per-command overhead (cached writes) | 30 |
 | `--cache_mb` | volatile write cache, 0 = write-through | 64 |
 | `--ncq` | requests considered for reordering | 32 |
+| `--max_wait_ms` | a request passed over this long goes next, 0 = no limit | 500 |
 | `--stroke` | fraction of the full stroke the device spans | 1.0 |
-| `--seed` | platter phase at start | 0 |
+| `--seed` | platter phase at clock zero | 0 |
 | `--stats` | file rewritten once a second with model counters | |
 
 `hgst-7k8` follows the HGST/WD Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA)
@@ -64,13 +74,15 @@ device, so seeks span the full stroke):
 | test | model | reference |
 |---|---|---|
 | 4K random read QD1 | 80 IOPS, 12.5 ms mean | 8.0 + 4.16 ms = 12.2 ms (spec) |
-| 4K random read QD32 | 207 IOPS | ~200 for 7200 rpm SATA with NCQ (typical) |
-| 1M sequential read QD1 | 186 MB/s | 205 MB/s internal, 255 MB/s outer (spec) |
-| 1M sequential write QD1 / QD4, cache on | 207 / 204 MB/s | |
+| 4K random read QD32 | 198 IOPS, p99 518 ms (age limit) | ~200 for 7200 rpm SATA with NCQ (typical) |
+| 1M sequential read QD1 | 186–197 MB/s | 205 MB/s internal, 255 MB/s outer (spec) |
+| 1M sequential write QD1 / QD4, cache on | 207 / 206 MB/s, QD4 p99 25 ms | |
 | 1M sequential write QD1 / QD4, cache off | 78 / 205 MB/s | QD1 misses a revolution per write |
 | 4K random write + fsync | 80/s, flush 12.4 ms | 13–16 ms median per flush on these drives in production, at 0.4–5 flushes/s with ~4 larger writes per flush |
-| flush of a full 64 MiB cache of random 4K writes | 10.8 s | unknown |
-| 4K read QD1 next to a write+fsync QD1 job | 41 IOPS, 24.3 ms p50 | reads wait for the flush |
+| flush of a full 64 MiB cache of random 4K writes | 11–15 s | unknown |
+| 4K read QD1 next to a write+fsync QD1 job | 41 IOPS, 24.5 ms p50 | reads wait for the flush |
+| 4K read QD4 next to a 4K random writer QD1, cache on | reads 106 IOPS; writes 653 IOPS, p99 14 ms (cache stays full) | |
+| 4K read QD1 next to a 1M sequential writer QD4, cache on / off | reads 30 IOPS, p50 33 ms; writes 53 MB/s / reads 2 IOPS, p99 522 ms (age limit); writes 191 MB/s | depends on how a drive shares time between them (assumed one-for-one, 500 ms age limit) |
 | cache off, 4K random write QD1 | 80 IOPS, 0 flushes at the device | |
 
 ### `ssd`: flash SSD, SATA or NVMe

@@ -3,34 +3,35 @@
 #
 # usage: sudo bench/calibrate.sh [runtime_s=60] [extra kublk hdd options...]
 #
-# Creates a memory-backed null_blk (4 GiB, configfs name ublksim0) as the
-# backing store, starts `kublk add -t hdd` on it as /dev/ublkb<ID>, runs the
-# fio jobs below one at a time and prints one summary line per job, then
-# tears everything down. Results (fio json, model stats) go to $OUT.
+# Creates a memory-backed null_blk (4 GiB, configfs name ublksim<ID>) as
+# the backing store, starts `kublk add -t hdd` on it as /dev/ublkb<ID>,
+# runs the fio jobs below one at a time and prints one summary line per
+# job, then tears everything down. Results (fio json, model stats) go to
+# $OUT.
 set -euo pipefail
 
 RT=${1:-60}; shift || true
 ID=${ID:-10}
 OUT=${OUT:-/tmp/ublk-disksim-cal-$(date +%s)}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-CFG=/sys/kernel/config/nullb/ublksim0
-BACK=/dev/ublksim0      # null_blk configfs devices are named after the dir
+CFG=/sys/kernel/config/nullb/ublksim$ID
+BACK=/dev/ublksim$ID    # null_blk configfs devices are named after the dir
 DEV=/dev/ublkb$ID
 mkdir -p "$OUT"
 
-cleanup() {
-    "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true
+cleanup() {  # only what this run created
+    [ -n "${ADDED:-}" ] && { "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true; }
     if [ -d "$CFG" ]; then
         echo 0 > "$CFG/power"
         rmdir "$CFG"
     fi
 }
-trap cleanup EXIT
 
 modprobe null_blk nr_devices=0 2>/dev/null || true
 modprobe ublk_drv
 mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
-mkdir "$CFG"
+mkdir "$CFG"            # fails if another run uses this ID: nothing to undo
+trap cleanup EXIT
 for kv in size=4096 blocksize=512 memory_backed=1 irqmode=0 queue_mode=2; do
     echo "${kv#*=}" > "$CFG/${kv%%=*}"
 done
@@ -38,6 +39,7 @@ echo 1 > "$CFG/power"
 
 "$HERE/kublk" add -t hdd -n "$ID" -q 1 -d 32 --stats "$OUT/model.stats" \
     "$@" "$BACK" | tee "$OUT/kublk.txt"
+ADDED=1
 udevadm settle
 echo "device $DEV: rotational $(cat /sys/block/ublkb$ID/queue/rotational)" \
      "write_cache '$(cat /sys/block/ublkb$ID/queue/write_cache)'"
@@ -86,14 +88,16 @@ run seqwrite-1m-qd1 --rw=write --bs=1M --iodepth=1
 run seqwrite-1m-qd4 --rw=write --bs=1M --iodepth=4
 f0=$(flushes)
 run randwrite-qd1   --rw=randwrite --bs=4k --iodepth=1
-# one flush with whatever randwrite-qd1 left dirty, timed on its own so it
-# doesn't land inside the next job
-python3 - "$DEV" <<'EOF'
+timed_flush() {  # label: one flush of whatever the previous job left dirty
+    python3 - "$DEV" "$1" <<'EOF'
 import os, sys, time
 fd = os.open(sys.argv[1], os.O_WRONLY)
 t = time.monotonic(); os.fsync(fd); t = time.monotonic() - t
-print(f"flush after randwrite-qd1: {t:.2f} s")
+print(f"flush after {sys.argv[2]}: {t:.2f} s")
 EOF
+}
+# timed on its own so it doesn't land inside the next job
+timed_flush randwrite-qd1
 run randwrite-fsync --rw=randwrite --bs=4k --iodepth=1 --fsync=1
 echo "flushes during write jobs: $(( $(flushes) - f0 ))"
 
@@ -104,6 +108,26 @@ fio --filename="$DEV" --direct=1 --ioengine=libaio \
     --name=reader --rw=randread --bs=4k --iodepth=1 \
     --name=writer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 >/dev/null
 summary "$OUT/blocking.json" blocking
+
+# readers keeping the actuator busy next to a cached writer: does the
+# cache still get written back, or does it fill and stall the writer?
+fio --filename="$DEV" --direct=1 --ioengine=libaio \
+    --time_based --runtime="$RT" --size=4G --randrepeat=0 \
+    --output-format=json --output="$OUT/read-vs-cache.json" \
+    --name=reader --rw=randread --bs=4k --iodepth=4 \
+    --name=writer --rw=randwrite --bs=4k --iodepth=1 >/dev/null
+summary "$OUT/read-vs-cache.json" read-vs-cache
+timed_flush read-vs-cache
+
+# a reader next to a sequential writer: how long does a read wait behind
+# write-back of a long run of cached data?
+fio --filename="$DEV" --direct=1 --ioengine=libaio \
+    --time_based --runtime="$RT" --size=4G --randrepeat=0 \
+    --output-format=json --output="$OUT/read-vs-seq.json" \
+    --name=reader --rw=randread --bs=4k --iodepth=1 \
+    --name=writer --rw=write --bs=1M --iodepth=4 >/dev/null
+summary "$OUT/read-vs-seq.json" read-vs-seq
+timed_flush read-vs-seq
 
 cat "$OUT/model.stats"
 echo "results in $OUT"

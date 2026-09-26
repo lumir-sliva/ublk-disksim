@@ -8,15 +8,21 @@
  *
  *  - one actuator: reads and write-through writes are served one at a time,
  *    shortest-positioning-time-first among the oldest `ncq` waiting
- *    requests (NCQ with rotational position ordering);
+ *    requests (NCQ with rotational position ordering), except that one
+ *    passed over for max_wait_ms is served next;
  *  - positioning = seek(distance, none within a track) + wait for the
  *    sector to rotate under the head (sector angle = lba / sectors per
  *    track, platter phase = time / revolution), then media transfer; a
- *    request that starts where the head is costs no positioning;
+ *    read, a write-back or an already queued write that starts where the
+ *    head is costs no positioning (see pos_ns);
  *  - a volatile write cache (cache_mb > 0): writes complete after the host
- *    transfer and are destaged by the actuator when it has nothing else to
- *    do, shortest-positioning-time-first over the whole cache; when the
- *    cache is full, writes wait for space;
+ *    transfer and are written back by the actuator
+ *    shortest-positioning-time-first over the whole cache, at most one
+ *    track per operation so queued reads get a turn in between. Write-back
+ *    runs when the actuator has nothing else to do; once the cache is 3/4
+ *    full or writes wait for space, it also alternates with the queue,
+ *    one write-back per queued request served (one that started while the
+ *    queue was empty counts);
  *  - FLUSH as SATA FLUSH CACHE: a non-queued command. Requests queued before
  *    it are served, the whole dirty cache is destaged, and everything that
  *    arrives meanwhile (reads included) waits until the flush completes;
@@ -57,6 +63,7 @@ struct hdd_model {
 	double period_ns;	/* one revolution */
 	double spt;		/* sectors per track, from media rate and rpm */
 	double phase0;		/* platter phase at t = 0, from the seed */
+	__u64 max_wait_ns;	/* 0 = no age limit */
 	__u64 dev_sectors;
 	__u64 cache_bytes;
 
@@ -92,6 +99,10 @@ struct hdd_model {
 	__u64 n_read, n_write, n_flush, n_destage, n_cache_full;
 	__u64 flush_ns_sum, flush_ns_max, flush_bytes_sum;
 	__u64 n_blocked, blocked_ns_sum;
+
+	__u64 destaging;	/* bytes of the write-back in progress */
+	struct hdd_req *spare;	/* swapped with `blocked` on flush replay */
+	int wb_turn;		/* a write-back ran since the last queued request */
 };
 
 static __u64 now_ns(void)
@@ -245,6 +256,48 @@ static __u64 max_u64(__u64 a, __u64 b)
 	return a > b ? a : b;
 }
 
+/* the cheapest dirty extent to write back next, and when it can start */
+static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
+{
+	int i, best = -1;
+
+	for (i = 0; i < m->ndirty; i++) {
+		__u64 t = max_u64(free_at, m->dirty[i].added);
+		double ready = t + pos_ns(m, t, m->head, m->dirty[i].lba, 1);
+
+		if (best < 0 || ready < *bready) {
+			*bready = ready;
+			best = i;
+		}
+	}
+	return best;
+}
+
+/*
+ * Write back at most one track of dirty extent i, starting at `ready`. The
+ * rest stays dirty and costs no positioning if it is taken next; the cache
+ * space is freed when the transfer ends (pump).
+ */
+static void destage(struct hdd_model *m, int i, double ready)
+{
+	struct hdd_ext *x = &m->dirty[i];
+	__u64 nr = x->nr, track = (__u64)m->spt;
+
+	if (track && nr > track)
+		nr = track;
+	m->busy_until = (__u64)ready + xfer_ns(m->p.mbps, nr);
+	m->head = x->lba + nr;
+	m->destaging = nr << 9;
+	if (nr == x->nr) {
+		*x = m->dirty[--m->ndirty];
+	} else {
+		x->lba += nr;
+		x->nr -= nr;
+	}
+	m->n_destage++;
+	m->wb_turn = 1;
+}
+
 /*
  * Run the actuator up to `now`. The actuator keeps its own timeline:
  * each operation starts when the actuator became free or when its request
@@ -252,7 +305,7 @@ static __u64 max_u64(__u64 a, __u64 b)
  * the model doesn't depend on how promptly timers fire. Completions that
  * fall in the (recent) past fire at once.
  */
-static void pump(struct hdd_model *m)
+static __u64 pump(struct hdd_model *m)
 {
 	__u64 now = now_ns();
 
@@ -263,6 +316,10 @@ static void pump(struct hdd_model *m)
 			arm_mech(m);
 			break;
 		}
+
+		/* the last write-back is on the platters: its space is free */
+		m->dirty_bytes -= m->destaging;
+		m->destaging = 0;
 
 		/* cache space freed by destaging admits waiting writes */
 		while (m->nwait && m->dirty_bytes + (m->wait[0].nr << 9) <=
@@ -281,7 +338,33 @@ static void pump(struct hdd_model *m)
 			double ready, bready = 0;
 			struct hdd_req r;
 
-			/* earliest start of transfer first (NCQ with RPO) */
+			/*
+			 * A cache 3/4 full (or writes waiting for space) forces
+			 * write-back instead of waiting for an idle actuator,
+			 * as a drive does before its cache runs out: one
+			 * write-back per queued request served, counting one
+			 * that started while the queue was empty. (Comparing
+			 * ready times would starve the queue: the best of
+			 * thousands of dirty extents is nearly always closer
+			 * than the best of a few queued reads.)
+			 */
+			if (m->ndirty && !m->wb_turn && (m->nwait ||
+			    m->dirty_bytes >= m->cache_bytes / 4 * 3)) {
+				double dready = 0;
+				int d = best_dirty(m, free_at, &dready);
+
+				destage(m, d, dready);
+				continue;
+			}
+
+			/*
+			 * Earliest start of transfer first (NCQ with RPO), but
+			 * a request passed over for max_wait_ms goes next: the
+			 * queue is in arrival order, pend[0] is the oldest.
+			 */
+			if (m->max_wait_ns && free_at >= m->pend[0].arrive +
+			    m->max_wait_ns)
+				n = 1;
 			for (i = 0; i < n; i++) {
 				const struct hdd_req *c = &m->pend[i];
 				__u64 t = max_u64(free_at, c->arrive);
@@ -294,6 +377,8 @@ static void pump(struct hdd_model *m)
 					best = i;
 				}
 			}
+			m->wb_turn = 0;
+
 			r = m->pend[best];
 			memmove(m->pend + best, m->pend + best + 1,
 				(--m->npend - best) * sizeof(*m->pend));
@@ -306,7 +391,7 @@ static void pump(struct hdd_model *m)
 		if (m->flush_tag >= 0 && !m->ndirty && !m->nwait) {
 			__u64 t = max_u64(free_at, m->flush_start);
 			__u64 d = t - m->flush_start;
-			struct hdd_req *held;
+			struct hdd_req *held = m->blocked;
 			int i, n = m->nblocked;
 
 			submit_done(m, m->flush_tag, UBLK_IO_OP_FLUSH, t);
@@ -316,44 +401,35 @@ static void pump(struct hdd_model *m)
 				m->flush_ns_max = d;
 			m->flush_tag = -1;
 
-			/* replay what the flush held back, in arrival order */
-			held = malloc(n * sizeof(*held) + 1);
-			memcpy(held, m->blocked, n * sizeof(*held));
+			/*
+			 * Replay what the flush held back, in arrival order;
+			 * anything a replayed flush holds again goes to the
+			 * other array.
+			 */
+			m->blocked = m->spare;
+			m->spare = held;
 			m->nblocked = 0;
 			for (i = 0; i < n; i++) {
+				__u64 at = max_u64(t, held[i].arrive);
+
 				m->n_blocked++;
-				m->blocked_ns_sum += t - held[i].arrive;
-				arrive(m, held[i], t);
+				m->blocked_ns_sum += at - held[i].arrive;
+				arrive(m, held[i], at);
 			}
-			free(held);
 			continue;
 		}
 
 		if (m->ndirty) {
-			int i, best = -1;
-			double ready, bready = 0;
-			struct hdd_ext x;
+			double bready = 0;
+			int d = best_dirty(m, free_at, &bready);
 
-			for (i = 0; i < m->ndirty; i++) {
-				__u64 t = max_u64(free_at, m->dirty[i].added);
-
-				ready = t + pos_ns(m, t, m->head, m->dirty[i].lba, 1);
-				if (best < 0 || ready < bready) {
-					bready = ready;
-					best = i;
-				}
-			}
-			x = m->dirty[best];
-			m->dirty[best] = m->dirty[--m->ndirty];
-			m->dirty_bytes -= x.nr << 9;
-			m->busy_until = (__u64)bready + xfer_ns(m->p.mbps, x.nr);
-			m->head = x.lba + x.nr;
-			m->n_destage++;
+			destage(m, d, bready);
 			continue;
 		}
 		break;
 	}
 	write_stats(m, now);
+	return now;
 }
 
 /* a request reaches the drive at `now` (or is released by a flush then) */
@@ -434,7 +510,8 @@ static int hdd_queue_io(struct ublk_thread *t, struct ublk_queue *q, int tag)
 		return 0;
 	}
 
-	arrive(m, r, now_ns());
+	/* catch up first, so a request never meets a flush already done */
+	arrive(m, r, pump(m));
 	pump(m);
 	return 0;
 }
@@ -485,9 +562,13 @@ static int hdd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 		ublk_err("hdd: zero copy not supported\n");
 		return -EINVAL;
 	}
-	if (p->seek_avg_ms < p->seek_min_ms || p->rpm == 0 || p->mbps <= 0 ||
-	    p->iface_mbps <= 0 || p->stroke <= 0 || p->ncq == 0) {
-		ublk_err("hdd: bad model parameters\n");
+	if (p->seek_avg_ms < p->seek_min_ms || p->seek_min_ms < 0 ||
+	    p->rpm == 0 || p->mbps <= 0 || p->iface_mbps <= 0 ||
+	    p->iface_us < 0 || p->stroke <= 0 || p->ncq == 0 ||
+	    !(p->max_wait_ms >= 0 && p->max_wait_ms <= 1e9) ||
+	    (p->cache_mb && ((__u64)p->cache_mb << 20) <
+	     dev->dev_info.max_io_buf_bytes)) {
+		ublk_err("hdd: bad model parameters (see `kublk help`)\n");
 		return -EINVAL;
 	}
 
@@ -528,11 +609,13 @@ static int hdd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	m->pend = calloc(depth, sizeof(*m->pend));
 	m->wait = calloc(depth, sizeof(*m->wait));
 	m->blocked = calloc(depth, sizeof(*m->blocked));
+	m->spare = calloc(depth, sizeof(*m->spare));
 	m->cap_dirty = 1024;
 	m->dirty = calloc(m->cap_dirty, sizeof(*m->dirty));
 	m->flush_tag = -1;
 	m->period_ns = 60e9 / p->rpm;
 	m->spt = p->mbps * 1e6 * (60.0 / p->rpm) / 512;
+	m->max_wait_ns = (__u64)(p->max_wait_ms * 1e6);
 	m->phase0 = (double)(p->seed % 1000003) / 1000003.0;
 	m->stats_fd = -1;
 	if (p->stats[0]) {
@@ -543,9 +626,11 @@ static int hdd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	dev->private_data = m;
 
 	ublk_log("hdd: rpm %u seek %.2f/%.2f/%.2f ms (min/avg/full) media %.0f MB/s "
-		 "(%.0f sectors/track) cache %u MiB ncq %u stroke %.2f\n",
+		 "(%.0f sectors/track) cache %u MiB ncq %u max wait %.0f ms "
+		 "stroke %.2f\n",
 		 p->rpm, p->seek_min_ms, p->seek_avg_ms, m->seek_full_ms,
-		 p->mbps, m->spt, p->cache_mb, p->ncq, p->stroke);
+		 p->mbps, m->spt, p->cache_mb, p->ncq, p->max_wait_ms,
+		 p->stroke);
 	return 0;
 }
 
@@ -564,13 +649,14 @@ static void hdd_deinit_tgt(struct ublk_dev *dev)
 	free(m->pend);
 	free(m->wait);
 	free(m->blocked);
+	free(m->spare);
 	free(m->dirty);
 	free(m);
 }
 
 /*
- * Profiles: named parameter sets. hgst-7k8 approximates the fleet's
- * HGST Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA, 7200 rpm); see README
+ * Profiles: named parameter sets. hgst-7k8 approximates the HGST
+ * Ultrastar 7K8 (HUS728T8TALE6L4, 8 TB SATA, 7200 rpm); see README
  * for the sources and the calibration status of each number.
  */
 static const struct {
@@ -580,7 +666,7 @@ static const struct {
 	{ "hgst-7k8", {
 		.rpm = 7200, .seek_min_ms = 0.6, .seek_avg_ms = 8.0,
 		.mbps = 205, .iface_mbps = 600, .iface_us = 30,
-		.cache_mb = 64, .ncq = 32, .stroke = 1.0,
+		.cache_mb = 64, .ncq = 32, .stroke = 1.0, .max_wait_ms = 500,
 	} },
 };
 
@@ -624,6 +710,8 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->cache_mb = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--ncq"))
 			p->ncq = strtoul(v, NULL, 10);
+		else if (!strcmp(k, "--max_wait_ms"))
+			p->max_wait_ms = strtod(v, NULL);
 		else if (!strcmp(k, "--stroke"))
 			p->stroke = strtod(v, NULL);
 		else if (!strcmp(k, "--seed"))
@@ -640,7 +728,8 @@ static void hdd_usage(const struct ublk_tgt_ops *ops)
 	       "[--seek_avg_ms X]\n"
 	       "\t     [--mbps X] [--iface_mbps X] [--iface_us X] "
 	       "[--cache_mb N (0 = write-through)]\n"
-	       "\t     [--ncq N] [--stroke F] [--seed N] [--stats FILE] "
+	       "\t     [--ncq N] [--max_wait_ms X (0 = none)] [--stroke F] "
+	       "[--seed N] [--stats FILE] "
 	       "BACKING_DEV (use -q 1 -d 32)\n");
 }
 

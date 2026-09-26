@@ -116,7 +116,7 @@ With `--stats FILE`, the model rewrites FILE once a second:
 | `flushes` | cache flushes completed |
 | `flush_ms_sum`, `flush_ms_max` | time from flush arrival to completion |
 | `flush_dirty_mb_sum` | dirty data present when flushes arrived |
-| `destaged` | cache extents written to the platters |
+| `destaged` | write-back operations (at most one track each) |
 | `cache_full_waits` | writes that had to wait for cache space |
 | `blocked_by_flush`, `blocked_ms_sum` | requests held back by a flush in progress, and for how long |
 | `dirty_mb` | dirty data right now |
@@ -133,14 +133,17 @@ a fixed set of fio jobs and prints one line per job:
 ```bash
 sudo bench/calibrate.sh 30                       # 30 s per job, profile default
 sudo bench/calibrate.sh 30 --cache_mb 0          # same, cache off
-sudo ID=12 OUT=/tmp/cal bench/calibrate.sh 60 --seek_avg_ms 8.5
+sudo ID=11 OUT=/tmp/cal bench/calibrate.sh 60 --seek_avg_ms 8.5
 ```
 
 Jobs: 4K random read at QD1 and QD32, 1M sequential read, 1M sequential
 write at QD1 and QD4, 4K random write without and with an fsync per
-write, one flush of whatever the random writes left in the cache, and a
-reader next to a flushing writer. Raw fio JSON and the model's stats go
-to `$OUT`.
+write, one flush of whatever the random writes left in the cache, a
+reader next to a flushing writer, readers at QD4 next to a cached writer
+and a reader next to a sequential writer (each followed by a timed
+flush). Raw fio JSON and the model's stats go to `$OUT`. The backing is
+named after the device id (`ublksim<ID>`), so runs with different `ID`s
+don't collide.
 
 To imitate another drive:
 
@@ -169,7 +172,9 @@ device.
   modelled; for crash tests, stack `dm-log-writes` on top and replay.
 - One transfer rate and one track size for the whole disk (no zones), no
   read cache beyond sequential read-ahead, no firmware cap on dirty data
-  (a flush after filling 64 MiB with random writes takes ~11 s).
+  (on the 4 GiB calibration device, a flush after filling 64 MiB with
+  random writes takes ~11–15 s; a bigger device spreads the writes and
+  takes longer).
 - The model is only as good as its calibration; say which profile and
   parameters produced a number when you report it.
 
