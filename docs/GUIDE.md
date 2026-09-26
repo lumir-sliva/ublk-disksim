@@ -181,3 +181,78 @@ device.
 | `hdd: one actuator, needs -q 1` | pass `-q 1` and no `--nthreads` |
 | I/O errors with a 4K-block backing device | the model is 512e: use a backing store with 512-byte blocks |
 | build fails on `IORING_OP_*` | liburing too old; the Makefile already leaves out `stripe.c` |
+
+## 9. The ssd target
+
+Same setup as above, with `-t ssd` and the queue depth of the interface:
+
+```bash
+sudo ./kublk add -t ssd -n 2 -q 1 -d 32 --profile sata-plp \
+     --floor_us 24 --stats /tmp/ublk2.stats /dev/simback2
+sudo ./kublk add -t ssd -n 3 -q 1 -d 128 --profile nvme-plp \
+     --floor_us 24 /dev/simback3
+cat /sys/block/ublkb2/queue/rotational    # 0
+cat /sys/block/ublkb3/queue/write_cache   # "write through" (vwc 0)
+```
+
+**The floor.** A request through ublk costs the host some 20–40 µs
+before any model delay: two trips between kernel and server, and the
+server thread waking up for its completion timer. That is noise for a
+disk and a third of an SSD read, so the ssd target subtracts
+`--floor_us` from every completion, never finishing a request before it
+arrived. Measure it on the host you run on: `bench/calibrate_ssd.sh`
+does (4K random read at QD1 through the ssd target set to a fixed
+100 µs, minus 100 µs, minus the same read on the null_blk) and prints
+it; use that number for your own devices. A device faster than the
+floor can't be modelled: an NVMe drive that acks a write in 15 µs comes
+out at the floor.
+
+In a KVM guest the wakeup is a vCPU leaving HLT: about 35 µs, and more
+for sleeps beyond ~100 µs. Guest halt polling
+(`sudo modprobe cpuidle-haltpoll force=1`, check
+`/sys/devices/system/cpu/cpuidle/current_driver`) brought it to about
+18 µs on the machine this was developed on; sleeps of 200–400 µs still
+come out 10–40 µs long.
+
+**Profiles.** `sata-plp`, `nvme-plp`, `sata-consumer` (README). The
+difference that matters for most software is the flush: free with
+power-loss protection, milliseconds without it.
+
+**Stats** (`--stats FILE`):
+
+| field | meaning |
+|---|---|
+| `reads`, `writes`, `flushes` | requests seen (flushes: only with `vwc 1`) |
+| `flush_ms_sum`, `flush_ms_max` | time from flush arrival to completion |
+| `seq_write_mb`, `random_write_mb` | writes classified as continuing a stream or not |
+| `program_units` | page programs done, garbage collection included |
+| `buffer_full_waits` | writes that waited for buffer space |
+| `blocked_by_flush`, `blocked_ms_sum` | requests held back by a SATA flush |
+| `read_die_waits`, `read_die_wait_ms_sum` | reads that found their die busy (another read or a program) |
+| `buffer_mb` | data in the write buffer right now |
+
+**Calibrate:**
+
+```bash
+sudo bench/calibrate_ssd.sh 30 --profile sata-consumer
+sudo FLOOR_US=24 bench/calibrate_ssd.sh 30 --profile nvme-plp --waf 4
+```
+
+Jobs: 4K random read at QD1, QD32 (and QD128 for NVMe), 128K sequential
+read and write at QD32, 4K random write at QD1 and QD32, 4K random and
+sequential writes with an fsync after each, and a reader next to a
+fsyncing writer.
+
+To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
+write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the
+QD32 random read IOPS, `dies` · page / `tprog_us` to the sequential
+write rate, and `waf` to the steady-state (full drive) random write
+IOPS. `flush_us` comes from a measured 4K write + fsync at QD1, which
+Ceph users publish for many drives. Then add a profile to `profiles[]`
+in `ssd.c`.
+
+Limits: tier-one model. No garbage collection as a process (the `waf`
+factor charges it to the writes that cause it, at steady state), no SLC
+cache, no program suspend (a read behind a program waits for it), no
+reads from the write buffer, one model thread (~270K IOPS and ~4.4 GB/s
+on a current server, below NVMe drives' peak).

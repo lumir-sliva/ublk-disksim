@@ -77,6 +77,26 @@ struct hdd_params {
 	char		stats[256];	/* stats file, rewritten once a second */
 };
 
+struct ssd_params {
+	/* ssd timing model, see ssd.c */
+	unsigned	nvme;		/* 0: SATA (non-queued FLUSH), 1: NVMe */
+	double		iface_mbps;	/* host link */
+	double		cmd_us;		/* link time per command */
+	double		iface_us;	/* controller latency per command */
+	unsigned	dies;
+	unsigned	page_kb;	/* program unit */
+	double		tr_us;		/* page read, incl. ECC and lookup */
+	double		ch_mbps;	/* flash channel */
+	double		tprog_us;	/* page program */
+	double		waf;		/* program units per random-write page */
+	unsigned	buf_mb;		/* write buffer */
+	unsigned	plp;		/* buffer survives power loss */
+	unsigned	vwc;		/* advertise a volatile write cache */
+	double		flush_us;	/* FLUSH cost once drained */
+	double		floor_us;	/* host overhead to subtract */
+	char		stats[256];	/* stats file, rewritten once a second */
+};
+
 struct dev_ctx {
 	char tgt_type[16];
 	unsigned long flags;
@@ -107,6 +127,7 @@ struct dev_ctx {
 		struct stripe_ctx 	stripe;
 		struct fault_inject_ctx fault_inject;
 		struct hdd_params	hdd;
+		struct ssd_params	ssd;
 	};
 };
 
@@ -434,6 +455,7 @@ extern const struct ublk_tgt_ops loop_tgt_ops;
 extern const struct ublk_tgt_ops stripe_tgt_ops;
 extern const struct ublk_tgt_ops fault_inject_tgt_ops;
 extern const struct ublk_tgt_ops hdd_tgt_ops;
+extern const struct ublk_tgt_ops ssd_tgt_ops;
 
 void backing_file_tgt_deinit(struct ublk_dev *dev);
 int backing_file_tgt_init(struct ublk_dev *dev);
