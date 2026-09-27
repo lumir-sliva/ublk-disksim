@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640" font-family="Helvetica, Arial, sans-serif">
+<rect width="900" height="640" fill="#ffffff"/>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c9302c"/></marker></defs>
+<text x="20" y="30" font-size="18" fill="#222" font-weight="bold">Inside the ssd model: a host link, a write buffer, flash dies, and a flush</text>
+<text x="20" y="51" font-size="12" fill="#555">The link and every die keep their own timelines; a request waits only for what it uses. Parameters in brackets</text>
+<text x="20" y="67" font-size="12" fill="#555">(profiles sata-plp / nvme-plp / sata-consumer / micron-7300).</text>
+
+<!-- inputs -->
+<rect x="20" y="118" width="120" height="28" rx="6" fill="#fdf1e3" stroke="#e8912d" stroke-width="1.5"/>
+<text x="80" y="135" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">reads</text>
+<rect x="20" y="168" width="120" height="28" rx="6" fill="#fdf1e3" stroke="#e8912d" stroke-width="1.5"/>
+<text x="80" y="185" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">writes</text>
+<rect x="20" y="420" width="120" height="28" rx="6" fill="#fbeaea" stroke="#c9302c" stroke-width="1.5"/>
+<text x="80" y="437" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">FLUSH</text>
+
+<!-- host link -->
+<rect x="190" y="95" width="265" height="120" rx="6" fill="#eef4fa" stroke="#2b7bba" stroke-width="1.5"/>
+<text x="322.5" y="112" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">host link + controller</text>
+<text x="322.5" y="129" font-size="10.5" fill="#444" text-anchor="middle">transfer at [560 / 6900 / 560 / 3000 MB/s]</text>
+<text x="322.5" y="143" font-size="10.5" fill="#444" text-anchor="middle">SATA: + [3 µs] of link per command,</text>
+<text x="322.5" y="157" font-size="10.5" fill="#444" text-anchor="middle">at most 32 commands (NCQ)</text>
+<text x="322.5" y="171" font-size="10.5" fill="#444" text-anchor="middle">controller [29 / 14 / 17.5 / 23.6 µs]</text>
+<text x="322.5" y="185" font-size="10.5" fill="#444" text-anchor="middle">per command; one link, busy intervals</text>
+<text x="322.5" y="199" font-size="10.5" fill="#444" text-anchor="middle">shared by reads and writes</text>
+<polyline points="140,132 188,132" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+<polyline points="140,182 188,182" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+
+<!-- write buffer -->
+<rect x="190" y="255" width="265" height="120" rx="6" fill="#eaf5ea" stroke="#3d8b3d" stroke-width="1.5"/>
+<text x="322.5" y="272" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">write buffer [32 / 64 / 32 / 64 MiB]</text>
+<text x="322.5" y="289" font-size="10.5" fill="#444" text-anchor="middle">a write is done once it is buffered</text>
+<text x="322.5" y="303" font-size="10.5" fill="#444" text-anchor="middle">full 16 KiB pages go to the first free die</text>
+<text x="322.5" y="317" font-size="10.5" fill="#444" text-anchor="middle">a page of random writes costs</text>
+<text x="322.5" y="331" font-size="10.5" fill="#444" text-anchor="middle">[7.3 / 4.9 / 13.7 / 5.0] program units</text>
+<text x="322.5" y="345" font-size="10.5" fill="#444" text-anchor="middle">(garbage collection folded in), a stream 1</text>
+<text x="322.5" y="359" font-size="10.5" fill="#444" text-anchor="middle">full buffer: writes wait for space</text>
+<polyline points="322,215 322,253" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+<text x="330" y="239" font-size="10" fill="#555">writes</text>
+
+<!-- dies -->
+<rect x="530" y="95" width="345" height="280" rx="6" fill="#f4f4f4" stroke="#222" stroke-width="1.5"/>
+<text x="702.5" y="112" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">flash dies [32 / 64 / 16 / 64]</text>
+<g fill="#ffffff" stroke="#888" stroke-width="1">
+<rect x="548" y="124" width="30" height="22" rx="3"/><rect x="584" y="124" width="30" height="22" rx="3"/><rect x="620" y="124" width="30" height="22" rx="3" fill="#dcebdc"/><rect x="656" y="124" width="30" height="22" rx="3"/><rect x="692" y="124" width="30" height="22" rx="3" fill="#dcebdc"/><rect x="728" y="124" width="30" height="22" rx="3"/><rect x="764" y="124" width="30" height="22" rx="3"/><rect x="800" y="124" width="30" height="22" rx="3" fill="#dde8f5"/>
+<rect x="548" y="152" width="30" height="22" rx="3" fill="#dde8f5"/><rect x="584" y="152" width="30" height="22" rx="3"/><rect x="620" y="152" width="30" height="22" rx="3"/><rect x="656" y="152" width="30" height="22" rx="3" fill="#dcebdc"/><rect x="692" y="152" width="30" height="22" rx="3"/><rect x="728" y="152" width="30" height="22" rx="3"/><rect x="764" y="152" width="30" height="22" rx="3" fill="#dcebdc"/><rect x="800" y="152" width="30" height="22" rx="3"/>
+</g>
+<text x="840" y="140" font-size="9.5" fill="#555">…</text>
+<rect x="548" y="182" width="10" height="10" fill="#dde8f5" stroke="#888"/><text x="562" y="191" font-size="9.5" fill="#555">reading</text>
+<rect x="612" y="182" width="10" height="10" fill="#dcebdc" stroke="#888"/><text x="626" y="191" font-size="9.5" fill="#555">programming</text>
+<text x="545" y="215" font-size="10.5" fill="#333">each die has its own timeline:</text>
+<text x="545" y="231" font-size="10.5" fill="#333">  read = page read [75 / 62 / 46 / 60 µs]</text>
+<text x="545" y="246" font-size="10.5" fill="#333">         + channel [800 / 1200 / 1200 / 800 MB/s]</text>
+<text x="545" y="262" font-size="10.5" fill="#333">  program unit = [700 / 400 / 390 / 656 µs]</text>
+<text x="545" y="277" font-size="10.5" fill="#333">         + one page over the channel</text>
+<text x="545" y="297" font-size="10.5" fill="#333">a read goes to die (page number mod dies) and</text>
+<text x="545" y="312" font-size="10.5" fill="#333">waits for whatever that die is doing, a program</text>
+<text x="545" y="327" font-size="10.5" fill="#333">included: no program suspend, no reads served</text>
+<text x="545" y="342" font-size="10.5" fill="#333">from the buffer; die time is the parallelism</text>
+<text x="545" y="357" font-size="10.5" fill="#333">(sequential write = dies × page / program unit)</text>
+<polyline points="455,125 528,125" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+<text x="491" y="118" font-size="10" fill="#555" text-anchor="middle">read</text>
+<polyline points="528,165 457,165" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+<text x="491" y="158" font-size="10" fill="#555" text-anchor="middle">data</text>
+<polyline points="455,315 528,315" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
+<text x="491" y="308" font-size="10" fill="#555" text-anchor="middle">program</text>
+
+<!-- flush -->
+<rect x="190" y="400" width="265" height="92" rx="6" fill="#fbeaea" stroke="#c9302c" stroke-width="1.5"/>
+<text x="322.5" y="417" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">FLUSH</text>
+<text x="322.5" y="434" font-size="10.5" fill="#444" text-anchor="middle">with power-loss protection: [15 µs]</text>
+<text x="322.5" y="448" font-size="10.5" fill="#444" text-anchor="middle">without: waits until the whole buffer</text>
+<text x="322.5" y="462" font-size="10.5" fill="#444" text-anchor="middle">is programmed, then [3200 µs]</text>
+<text x="322.5" y="476" font-size="10.5" fill="#444" text-anchor="middle">nothing written since the last: free</text>
+<polyline points="140,434 188,434" fill="none" stroke="#c9302c" stroke-width="1.6" marker-end="url(#arr)"/>
+<polyline points="455,446 700,446 700,377" fill="none" stroke="#c9302c" stroke-width="1.6" marker-end="url(#arr)"/>
+<text x="712" y="404" font-size="10.5" fill="#c9302c">no PLP: drains the buffer</text>
+<text x="712" y="419" font-size="10.5" fill="#c9302c">through the dies</text>
+<text x="530" y="470" font-size="10.5" fill="#555">SATA: non-queued, everything behind it waits (reads too).</text>
+<text x="530" y="485" font-size="10.5" fill="#555">NVMe: queued. No volatile cache (nvme-plp, micron-7300):</text>
+<text x="530" y="500" font-size="10.5" fill="#555">the kernel sends no flushes at all.</text>
+
+<!-- summary -->
+<rect x="20" y="520" width="860" height="104" fill="#f7f7f7"/>
+<text x="35" y="542" font-size="11" fill="#333" font-weight="bold">What that gives (calibrate_ssd.sh; micron-7300 on a second host)</text>
+<text x="35" y="558" font-size="11" fill="#333">4K random read QD1: 121 / 82 / 79 / 94 µs (datasheets 120 / 80 / 77 / 90); QD32: 96K / 197K / 96K IOPS</text>
+<text x="35" y="574" font-size="11" fill="#333">128K sequential write: 553 / 2535 / 553 / 1552 MB/s; steady 4K random write QD32: 24.6K / 124K / 11.7K IOPS</text>
+<text x="35" y="590" font-size="11" fill="#333">4K write + fsync QD1: 14.4K/s / 33K/s (no flush sent) / 260/s — the consumer drive pays a full program + flush per fsync</text>
+<text x="35" y="606" font-size="11" fill="#333">every completion minus --floor_us (the host's own ublk overhead, measured by calibrate_ssd.sh), never before arrival</text>
+</svg>

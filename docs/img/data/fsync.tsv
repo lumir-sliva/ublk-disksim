@@ -1,0 +1,10 @@
+Micron 7300 PRO (real)	NVMe, power-loss protection	29718	raw device, no volatile cache: no flush sent
+micron-7300 model	NVMe, power-loss protection	20774	second host; floor-bound
+nvme-plp model	NVMe, power-loss protection	20976	second host; floor-bound; no flush sent
+sata-plp model	SATA, power-loss protection	12186	second host; 15 µs flush
+Kingston KC3000 (real)	consumer NVMe, volatile cache	2670	NTFS file, best of two runs (1341/s the other)
+Samsung 850 EVO (real)	consumer SATA, volatile cache	315	NTFS file, steady state
+sata-consumer model	consumer SATA, volatile cache	258	second host; program the partial page + 3.2 ms flush
+hgst-7k8 model	HDD	80.5	second host; write-back of the one dirty block
+barracuda-2t model	HDD	58.0	second host
+Seagate ST2000DM006 (real)	HDD	29	NTFS file (its flush includes file-system metadata)

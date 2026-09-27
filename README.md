@@ -135,6 +135,9 @@ flat above QD8 where the real drive still gains a little).
 
 What it models (see the header of `ssd_model.c`):
 
+![Inside the ssd model](docs/img/ssd-model.svg)
+
+
 - flash dies with their own timelines: a page read takes `tr_us` on its
   die (die = page number mod `dies`) plus the channel transfer, and waits
   for whatever that die is doing, a program included;
@@ -187,10 +190,11 @@ are the datasheet's; steady-state random write sets `waf` (for the 870
 EVO no full-drive figure is published, 12K IOPS is an estimate);
 `flush_us` is fitted to published 4K write + fsync measurements at QD1
 (Ceph community SSD lists: PM883 15.5K/s, PM9A3 70K/s, 870 EVO
-248–311/s). Buffer sizes are assumptions. `micron-7300` is not yet
-checked on a server; on the model tests' virtual clock it gives the
-datasheet's 90 µs read, 25 µs write, 3000 / 1548 MB/s and 75.7K steady
-random writes.
+248–311/s). Buffer sizes are assumptions. `micron-7300` was checked
+against the real drive on the same host (below and in
+docs/VALIDATION.md).
+
+![Where a 4K read and write spend their time in each ssd profile](docs/img/ssd-request.svg)
 
 Calibration (`bench/calibrate_ssd.sh 30`, KVM guest with guest halt
 polling, floor measured 15.8–16.4 µs, 4 GiB device):
@@ -222,6 +226,13 @@ protection. Next to a writer that fsyncs every 4K write, a consumer
 SATA drive answers 94% fewer reads (a real 850 EVO: 10.7K → 612 reads/s,
 p99 6.7 ms); `sata-consumer` reproduces that (−96%, p99 3.8 ms), while
 `sata-plp` loses 41%.
+
+![Time per 4K write + fsync on models and real drives](docs/img/fsync-cost.svg)
+
+One fsync on a drive with power-loss protection costs tens of µs (the
+real Micron 7300 PRO: 34 µs); without it, milliseconds: a consumer SATA
+SSD 3–4 ms (real 850 EVO 3.2 ms, `sata-consumer` 3.9 ms), a hard disk
+12–35 ms.
 
 How these numbers were checked, what else is tested (model tests, data
 integrity, delivered timing, real drives), and where the models stop

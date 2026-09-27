@@ -13,6 +13,9 @@ runs and checked against the numbers it shows.
 | `flush-reader.svg` | `data/flush.tsv` | `figures.py lat`: the QD1 read job alone and the reader of the "reader next to a writer that fsyncs" job |
 | `integrity.svg` | `data/integrity.tsv` | `figures.py integ`: the PASS/FAIL lines of `bench/integrity.sh` and of its `NEGATIVE=1` run |
 | `validation-overview.svg`, `mutation.svg`, `lateness.svg` | `data/tests.json` | the recorded results of `make check`, the planted-bug runs and the lateness table in VALIDATION.md, entered by hand; the overview also counts `data/integrity.tsv` |
+| `ssd-request.svg` | `ssd_model.c` | the `profiles[]` table itself: per-request costs summed as the model sums them |
+| `fsync-cost.svg` | `data/fsync.tsv` | the 4K write + fsync rate of each calibration run and of the real drives, entered by hand |
+| `ssd-model.svg`, `hdd-model.svg`, `architecture.svg` | — | drawn by hand |
 
 Where the runs came from:
 
