@@ -178,9 +178,11 @@ if [ -n "${NEGATIVE:-}" ]; then
 else
     run_device hdd-cache64   hdd 32  --cache_mb 64
     run_device hdd-nocache   hdd 32  --cache_mb 0
+    run_device barracuda-2t  hdd 32  --profile barracuda-2t
     run_device sata-plp      ssd 32  --profile sata-plp
     run_device nvme-plp      ssd 128 --profile nvme-plp
     run_device sata-consumer ssd 32  --profile sata-consumer
+    run_device micron-7300   ssd 128 --profile micron-7300
     run_device nvme-vwc      ssd 128 --profile nvme-plp --vwc 1 --plp 0
 fi
 

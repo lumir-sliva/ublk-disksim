@@ -1,0 +1,25 @@
+{
+  "_about": "Recorded results of the validation runs described in docs/VALIDATION.md; bench/figures.py draws validation-overview.svg, mutation.svg and lateness.svg from them.",
+  "make_check": {"checks": 36292033, "failures": 0, "scenario_tests": 21, "randomized_runs": 200},
+  "mutants": [
+    {"target": "hdd", "bug": "FLUSH completes before its last write-back ends", "caught_by": "flush timing check (scenario and randomized)"},
+    {"target": "ssd", "bug": "SATA FLUSH without PLP doesn't wait for page programs", "caught_by": "flush cost lower bound; flush timing check"},
+    {"target": "hdd", "bug": "queue served in arrival order (no NCQ reordering)", "caught_by": "QD32 ≈ QD1; the starvation control"},
+    {"target": "ssd", "bug": "reads ignore die contention", "caught_by": "one-die queueing test"},
+    {"target": "hdd", "bug": "write-back frees its cache space when it starts, not ends", "caught_by": "cache capacity scenario (added after this bug first survived)"}
+  ],
+  "lateness_us": {
+    "_about": "completion timer lateness over the calibration jobs, 30 s each, KVM guest with halt polling",
+    "rows": [
+      {"run": "hdd, cache on", "p50": 15, "p99": 90, "max": 1200, "bound": 500},
+      {"run": "hdd, cache off", "p50": 37, "p99": 127, "max": 970, "bound": 500},
+      {"run": "sata-plp", "p50": 10, "p99": 75, "max": 1800, "bound": 150},
+      {"run": "sata-consumer", "p50": 15, "p99": 107, "max": 1800, "bound": 150},
+      {"run": "nvme-plp", "p50": 75, "p99": 430, "max": 2800, "bound": 600}
+    ],
+    "before_fix": {"run": "hdd, cache on", "p50": 26, "p99": 1217, "max": 14300},
+    "after_fix": {"run": "hdd, cache on", "p50": 15, "p99": 90, "max": 1200}
+  },
+  "calibration": {"dev_host_profiles": 6, "dev_host_pass": 6, "second_host_checks": 44, "second_host_pass": 38},
+  "real_drives": ["Micron 7300 PRO", "Samsung 850 EVO", "Seagate ST2000DM006", "Kingston KC3000"]
+}

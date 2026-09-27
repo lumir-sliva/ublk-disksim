@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="756pt" height="370.8pt" viewBox="0 0 756 370.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 370.8 
+L 756 370.8 
+L 756 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="patch_2">
+   <path d="M 9.072 155.52 
+L 746.928 155.52 
+L 746.928 112.32 
+L 9.072 112.32 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_3">
+   <path d="M 9.072 207.36 
+L 746.928 207.36 
+L 746.928 164.16 
+L 9.072 164.16 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_4">
+   <path d="M 9.072 259.2 
+L 746.928 259.2 
+L 746.928 216 
+L 9.072 216 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_5">
+   <path d="M 9.072 311.04 
+L 746.928 311.04 
+L 746.928 267.84 
+L 9.072 267.84 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_6">
+   <path d="M 9.072 362.88 
+L 746.928 362.88 
+L 746.928 319.68 
+L 9.072 319.68 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="text_1">
+   <g id="patch_7">
+    <path d="M 13.976367 141.227764 
+L 31.383633 141.227764 
+Q 34.233633 141.227764 34.233633 138.377764 
+L 34.233633 129.462236 
+Q 34.233633 126.612236 31.383633 126.612236 
+L 13.976367 126.612236 
+Q 11.126367 126.612236 11.126367 129.462236 
+L 11.126367 138.377764 
+Q 11.126367 141.227764 13.976367 141.227764 
+z
+" style="fill: #1c6dd0"/>
+   </g>
+   <text style="font-weight: 700; font-size: 9.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="22.68" y="136.378496" transform="rotate(-0 22.68 136.378496)">hdd</text>
+  </g>
+  <g id="text_2">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="49.14" y="136.637285" transform="rotate(-0 49.14 136.637285)">FLUSH completes before its last write-back ends</text>
+  </g>
+  <g id="text_3">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="468.72" y="137.981865" transform="rotate(-0 468.72 137.981865)">✓</text>
+  </g>
+  <g id="text_4">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="487.62" y="136.456037" transform="rotate(-0 487.62 136.456037)">caught: flush timing check (scenario and randomized)</text>
+  </g>
+  <g id="text_5">
+   <g id="patch_8">
+    <path d="M 14.495898 193.067764 
+L 30.864102 193.067764 
+Q 33.714102 193.067764 33.714102 190.217764 
+L 33.714102 181.302236 
+Q 33.714102 178.452236 30.864102 178.452236 
+L 14.495898 178.452236 
+Q 11.645898 178.452236 11.645898 181.302236 
+L 11.645898 190.217764 
+Q 11.645898 193.067764 14.495898 193.067764 
+z
+" style="fill: #6f42c1"/>
+   </g>
+   <text style="font-weight: 700; font-size: 9.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="22.68" y="188.218496" transform="rotate(-0 22.68 188.218496)">ssd</text>
+  </g>
+  <g id="text_6">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="49.14" y="188.477183" transform="rotate(-0 49.14 188.477183)">SATA FLUSH without PLP doesn't wait for page programs</text>
+  </g>
+  <g id="text_7">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="468.72" y="189.821865" transform="rotate(-0 468.72 189.821865)">✓</text>
+  </g>
+  <g id="text_8">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="487.62" y="188.296037" transform="rotate(-0 487.62 188.296037)">caught: flush cost lower bound; flush timing check</text>
+  </g>
+  <g id="text_9">
+   <g id="patch_9">
+    <path d="M 13.976367 244.907764 
+L 31.383633 244.907764 
+Q 34.233633 244.907764 34.233633 242.057764 
+L 34.233633 233.142236 
+Q 34.233633 230.292236 31.383633 230.292236 
+L 13.976367 230.292236 
+Q 11.126367 230.292236 11.126367 233.142236 
+L 11.126367 242.057764 
+Q 11.126367 244.907764 13.976367 244.907764 
+z
+" style="fill: #1c6dd0"/>
+   </g>
+   <text style="font-weight: 700; font-size: 9.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="22.68" y="240.058496" transform="rotate(-0 22.68 240.058496)">hdd</text>
+  </g>
+  <g id="text_10">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="49.14" y="240.320156" transform="rotate(-0 49.14 240.320156)">queue served in arrival order (no NCQ reordering)</text>
+  </g>
+  <g id="text_11">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="468.72" y="241.661865" transform="rotate(-0 468.72 241.661865)">✓</text>
+  </g>
+  <g id="text_12">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="487.62" y="240.138813" transform="rotate(-0 487.62 240.138813)">caught: QD32 ≈ QD1; the starvation control</text>
+  </g>
+  <g id="text_13">
+   <g id="patch_10">
+    <path d="M 14.495898 296.747764 
+L 30.864102 296.747764 
+Q 33.714102 296.747764 33.714102 293.897764 
+L 33.714102 284.982236 
+Q 33.714102 282.132236 30.864102 282.132236 
+L 14.495898 282.132236 
+Q 11.645898 282.132236 11.645898 284.982236 
+L 11.645898 293.897764 
+Q 11.645898 296.747764 14.495898 296.747764 
+z
+" style="fill: #6f42c1"/>
+   </g>
+   <text style="font-weight: 700; font-size: 9.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="22.68" y="291.898496" transform="rotate(-0 22.68 291.898496)">ssd</text>
+  </g>
+  <g id="text_14">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="49.14" y="292.157183" transform="rotate(-0 49.14 292.157183)">reads ignore die contention</text>
+  </g>
+  <g id="text_15">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="468.72" y="293.501865" transform="rotate(-0 468.72 293.501865)">✓</text>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="487.62" y="291.976037" transform="rotate(-0 487.62 291.976037)">caught: one-die queueing test</text>
+  </g>
+  <g id="text_17">
+   <g id="patch_11">
+    <path d="M 13.976367 348.587764 
+L 31.383633 348.587764 
+Q 34.233633 348.587764 34.233633 345.737764 
+L 34.233633 336.822236 
+Q 34.233633 333.972236 31.383633 333.972236 
+L 13.976367 333.972236 
+Q 11.126367 333.972236 11.126367 336.822236 
+L 11.126367 345.737764 
+Q 11.126367 348.587764 13.976367 348.587764 
+z
+" style="fill: #1c6dd0"/>
+   </g>
+   <text style="font-weight: 700; font-size: 9.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="22.68" y="343.738496" transform="rotate(-0 22.68 343.738496)">hdd</text>
+  </g>
+  <g id="text_18">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="49.14" y="343.997285" transform="rotate(-0 49.14 343.997285)">write-back frees its cache space when it starts, not ends</text>
+  </g>
+  <g id="text_19">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="468.72" y="345.341865" transform="rotate(-0 468.72 345.341865)">✓</text>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(487.62 338.482885)">caught: cache capacity scenario (added after this bug first</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(487.62 349.149189)">survived)</text>
+  </g>
+  <g id="text_21">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="9.072" y="21.00041" transform="rotate(-0 9.072 21.00041)">Can the tests fail? 5 planted bugs, 5 caught</text>
+  </g>
+  <g id="text_22">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(9.072 47.054678)">Each bug went into a copy of the model on its own; make check had to fail. The last one first survived,</text>
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(9.072 61.893721)">and a test was added for it.</text>
+  </g>
+ </g>
+</svg>

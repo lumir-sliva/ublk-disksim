@@ -428,6 +428,219 @@ def draw_flush(plt, table, out):
     save(plt, fig, out)
 
 
+# ---- the tests -----------------------------------------------------------
+
+def cmd_integ(table, kind, log):
+    """PASS/FAIL lines of a bench/integrity.sh run (kind: run or negative)."""
+    import re
+    rows = [(kind, m[2], m[3], m[1]) for m in
+            (re.match(r"^(PASS|FAIL)\s+(\S+)\s+(\S+)", l) for l in open(log)) if m]
+    append(table, rows)
+
+
+def tile(fig, x, y, w, h, color, big, title, lines):
+    """A card at figure fraction (x, y, w, h); contents placed in inches."""
+    from matplotlib.patches import FancyBboxPatch
+    H = fig.get_figheight()
+    top = y + h
+    fig.patches.append(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0,rounding_size=0.01",
+                                      transform=fig.transFigure, facecolor="#f6f8f9",
+                                      edgecolor="none", zorder=0))
+    fig.patches.append(plt_rect(fig, x, top - 0.07 / H, w, 0.07 / H, color))
+    fig.text(x + 0.022, top - 0.28 / H, big, fontsize=30, fontweight="bold",
+             color=color, va="top")
+    fig.text(x + 0.022, top - 0.98 / H, title, fontsize=12, fontweight="bold",
+             va="top")
+    fig.text(x + 0.022, top - 1.3 / H, lines, fontsize=9.8, color=SOFT, va="top",
+             linespacing=1.45)
+
+
+def plt_rect(fig, x, y, w, h, color):
+    from matplotlib.patches import Rectangle
+    return Rectangle((x, y), w, h, transform=fig.transFigure, facecolor=color,
+                     edgecolor="none")
+
+
+def draw_overview(plt, t, integ, out):
+    fig = plt.figure(figsize=(11, 5.95))
+    mc, cal, lat = t["make_check"], t["calibration"], t["lateness_us"]
+    runs = [r for r in integ if r[0] == "run"]
+    npass = sum(r[3] == "PASS" for r in runs)
+    neg_failed = any(r[0] == "negative" and r[3] == "FAIL" for r in integ)
+    worst = max(r["p99"] / r["bound"] for r in lat["rows"])
+    tiles = [
+        (MODEL, f"{mc['checks'] / 1e6:.1f}M", "model checks, 0 failures",
+         f"`make check`: {mc['scenario_tests']} scenario tests on a virtual\n"
+         f"clock and {mc['randomized_runs']} randomized runs with invariants\n"
+         "checked after every model call"),
+        (MODEL, f"{len(t['mutants'])} / {len(t['mutants'])}", "planted bugs caught",
+         "Bugs put into the models on purpose,\none at a time: each one makes\n"
+         "`make check` fail"),
+        (OK, f"{min(r['p99'] for r in lat['rows'])}–{max(r['p99'] for r in lat['rows'])} µs",
+         "completion lateness, p99",
+         f"How late the host fires the model's\ntimers; every target within its bound\n"
+         f"(at most {worst:.0%} of it). Found and fixed a bug"),
+        (OK, f"{cal['dev_host_pass']} / {cal['dev_host_profiles']}", "profiles calibrated",
+         "fio against datasheets and real drives,\npass/fail per number; on a slower "
+         f"host\n{cal['second_host_pass']} of {cal['second_host_checks']} (misses: host limits)"),
+        (OK, f"{npass} / {len(runs)}", "data integrity checks",
+         f"crc32c verify and sha256 round trips on\nevery profile; the negative control\n"
+         f"{'fails as it must' if neg_failed else '(not run)'}: the check can see corruption"),
+        (REAL, f"{len(t['real_drives'])}", "real drives compared",
+         ",\n".join(", ".join(t["real_drives"][i:i + 2])
+                    for i in range(0, len(t["real_drives"]), 2))),
+    ]
+    W, H, gx, gy = 0.305, 2.2 / 5.95, 0.0215, 0.2 / 5.95
+    for i, (c, big, title, lines) in enumerate(tiles):
+        col, row = i % 3, i // 3
+        tile(fig, 0.0125 + col * (W + gx), 0.035 + (1 - row) * (H + gy), W, H, c,
+             big, title, lines.replace("`", ""))
+    headline(fig, "How we know the emulator is right",
+             "Five questions, each answered by a test anyone can rerun "
+             "(docs/VALIDATION.md).")
+    save(plt, fig, out)
+
+
+def draw_mutation(plt, t, out):
+    ms = t["mutants"]
+    fig = plt.figure(figsize=(10.5, 1.55 + 0.72 * len(ms)))
+    H = fig.get_figheight()
+    for i, m in enumerate(ms):
+        y = 1 - (1.5 + 0.72 * i + 0.36) / H
+        fig.patches.append(plt_rect(fig, 0.012, y - 0.30 / H, 0.976, 0.60 / H, "#f6f8f9"))
+        c = MODEL if m["target"] == "hdd" else "#6f42c1"
+        fig.text(0.03, y, m["target"], fontsize=9.5, fontweight="bold", color="white",
+                 va="center", ha="center", bbox=dict(boxstyle="round,pad=0.3",
+                                                    facecolor=c, edgecolor="none"))
+        fig.text(0.065, y, m["bug"], fontsize=10.5, va="center")
+        fig.text(0.62, y, "✓", fontsize=15, color=OK, va="center", fontweight="bold")
+        fig.text(0.645, y, "caught: " + m["caught_by"], fontsize=9.8, color=SOFT,
+                 va="center", wrap=True)
+    headline(fig, f"Can the tests fail? {len(ms)} planted bugs, {len(ms)} caught",
+             "Each bug went into a copy of the model on its own; `make check` "
+             "had to fail. The last one first survived,\nand a test was added "
+             "for it.".replace("`", ""))
+    save(plt, fig, out)
+
+
+def draw_lateness(plt, t, out):
+    from matplotlib.ticker import FixedLocator, NullLocator
+    L = t["lateness_us"]
+    rows = L["rows"]
+    fig = plt.figure(figsize=(10.5, 5.2))
+    ax = fig.add_axes([0.2, 0.2, 0.46, 0.55])
+    bx = fig.add_axes([0.76, 0.2, 0.21, 0.55])
+    for i, r in enumerate(rows):
+        y = -i
+        ax.plot((r["p50"], r["max"]), (y, y), color=FAINT, lw=6, solid_capstyle="round")
+        ax.plot((r["p50"], r["p99"]), (y, y), color=MODEL, lw=6, solid_capstyle="round")
+        ax.plot(r["p99"], y, "o", color=MODEL, ms=9)
+        ax.text(r["p99"], y + 0.3, f"p99 {r['p99']} µs", ha="center", fontsize=9,
+                color=MODEL, fontweight="bold")
+        ax.plot(r["bound"], y, marker="|", color=BAD, ms=22, mew=2.2)
+        ax.text(-0.02, y, r["run"], transform=ax.get_yaxis_transform(), ha="right",
+                va="center", fontsize=10.5)
+    ax.plot([], [], color=BAD, marker="|", ls="", ms=12, mew=2, label="bound (check fails above it)")
+    ax.plot([], [], color=MODEL, lw=6, label="median to p99")
+    ax.plot([], [], color=FAINT, lw=6, label="up to the maximum")
+    ax.legend(loc="lower right", fontsize=9, bbox_to_anchor=(1.0, 1.0), ncol=3,
+              handlelength=1.6)
+    ax.set_xscale("log")
+    ax.set_xlim(5, 20000)
+    ticks = [10, 100, 1000, 10000]
+    ax.xaxis.set_major_locator(FixedLocator(ticks))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.set_xticklabels([lat_ms(v) for v in ticks])
+    ax.set_yticks([])
+    ax.set_ylim(-len(rows) + 0.4, 0.75)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("how late a completion timer fires (calibration jobs, 30 s each)",
+                  fontsize=9.5)
+    b, a = L["before_fix"], L["after_fix"]
+    for j, (k, lab) in enumerate((("p99", "p99"), ("max", "max"))):
+        x = j
+        bx.plot((x, x), (b[k], a[k]), color=FAINT, lw=3)
+        bx.plot(x, b[k], "o", color=BAD, ms=10)
+        bx.plot(x, a[k], "o", color=OK, ms=10)
+        for v, c, when in ((b[k], BAD, "before"), (a[k], OK, "after")):
+            bx.text(x + 0.12, v, f"{when} {lat_ms(v)}", va="center", color=c,
+                    fontsize=9.5, fontweight="bold")
+    bx.set_yscale("log")
+    bx.set_ylim(40, 40000)
+    bx.yaxis.set_major_locator(FixedLocator(ticks[1:]))
+    bx.yaxis.set_minor_locator(NullLocator())
+    bx.set_yticklabels([lat_ms(v) for v in ticks[1:]])
+    bx.set_xticks([0, 1], ["p99", "max"])
+    bx.set_xlim(-0.4, 1.8)
+    bx.grid(axis="x", visible=False)
+    bx.text(0, 1.04, "hdd, full cache: before → after", transform=bx.transAxes,
+            fontsize=10.5, fontweight="bold", va="bottom")
+    bx.text(0, -0.13, "Picking the next write-back scanned\n~16K cached writes. "
+            "Now: a sorted set.", transform=bx.transAxes, fontsize=9, color=SOFT,
+            va="top")
+    headline(fig, "The host delivers the timing, and the check caught a real bug",
+             "Every completion's lateness against the model's schedule is "
+             "recorded; a calibration run fails if p99 exceeds the bound.\n"
+             "With a full hdd cache the server once fell up to 14 ms behind.")
+    save(plt, fig, out)
+
+
+def draw_integrity(plt, table, out):
+    rows = rows_of(table)
+    run = [r for r in rows if r[0] == "run"]
+    neg = [r for r in rows if r[0] == "negative"]
+    devs = list(dict.fromkeys(r[1] for r in run))
+    jobs = list(dict.fromkeys(r[2] for r in run))
+    names = {"a-randwrite-fsync-write": "random writes\n+ fsync",
+             "a-randwrite-fsync-verify": "verify them\n(separate pass)",
+             "b-seqwrite-1m": "1M sequential\n+ verify", "c-prefill": "prefill",
+             "c-randrw-verify": "70/30 mix,\nverified live",
+             "d-mixed-bs": "512 B–128K\n+ verify", "raw-dd-sha256": "dd round trip\nsha256"}
+    fig = plt.figure(figsize=(10.5, 1.5 + 0.42 * (len(devs) + 1.6)))
+    H = fig.get_figheight()
+    ax = fig.add_axes([0.22, 0.2 / H, 0.76, 1 - 1.3 / H])
+    label = {"hdd-cache64": "hdd, 64 MiB cache", "hdd-nocache": "hdd, cache off",
+             "barracuda-2t": "hdd barracuda-2t", "nvme-vwc": "NVMe, volatile cache,\nno PLP"}
+    res = {(r[1], r[2]): r[3] for r in run}
+    for i, d in enumerate(devs):
+        for j, jb in enumerate(jobs):
+            ok = res.get((d, jb)) == "PASS"
+            ax.add_patch(plt.Rectangle((j + 0.06, -i - 0.4), 0.88, 0.8,
+                                       color=OK if ok else BAD, alpha=0.9, lw=0))
+            ax.text(j + 0.5, -i, "PASS" if ok else "FAIL", ha="center", va="center",
+                    color="white", fontsize=8.5, fontweight="bold")
+        ax.text(-0.1, -i, label.get(d, f"ssd {d}"), ha="right", va="center",
+                fontsize=10.5, linespacing=1.15)
+    if neg:
+        y = -len(devs) - 0.6
+        for j, jb in enumerate(jobs):
+            r = next((x for x in neg if x[2] == jb), None)
+            if r:
+                c = BAD if r[3] == "FAIL" else "#a9d5b1"
+                ax.add_patch(plt.Rectangle((j + 0.06, y - 0.4), 0.88, 0.8, color=c,
+                                           lw=0))
+                ax.text(j + 0.5, y, r[3] + ("\nas it must" if r[3] == "FAIL" else ""),
+                        ha="center", va="center", color="white", fontsize=8,
+                        fontweight="bold", linespacing=1.1)
+        ax.text(-0.1, y, "negative control:\n8 MiB zeroed before\nthe verify",
+                ha="right", va="center", fontsize=9.5, color=BAD, linespacing=1.25)
+        low = y - 0.5
+    else:
+        low = -len(devs) + 0.5
+    for j, jb in enumerate(jobs):
+        ax.text(j + 0.5, 0.58, names.get(jb, jb), ha="center", va="bottom",
+                fontsize=9, color=SOFT, linespacing=1.2)
+    ax.set_xlim(0, len(jobs))
+    ax.set_ylim(low, 1.25)
+    ax.axis("off")
+    npass = sum(r[3] == "PASS" for r in run)
+    headline(fig, f"No corrupted data: {npass} of {len(run)} integrity checks pass",
+             "fio with crc32c verification on every target and profile "
+             "(bench/integrity.sh). The models only delay\ncompletions; the data "
+             "goes to the backing device unchanged. The negative control shows "
+             "the check can fail.")
+    save(plt, fig, out)
+
 PANELS = {
     "micron-read": ("Micron 7300 PRO (NVMe)", "4K random read, QD1"),
     "micron-mixed": ("Micron 7300 PRO (NVMe)", "4K read next to a writer that fsyncs"),
@@ -440,6 +653,14 @@ def cmd_draw(data="docs/img/data", img="docs/img"):
     plt = setup()
     os.makedirs(img, exist_ok=True)
     f = lambda n: os.path.join(data, n)
+    if os.path.exists(f("tests.json")):
+        t = json.load(open(f("tests.json"), encoding="utf-8"))
+        integ = rows_of(f("integrity.tsv")) if os.path.exists(f("integrity.tsv")) else []
+        draw_overview(plt, t, integ, os.path.join(img, "validation-overview.svg"))
+        draw_mutation(plt, t, os.path.join(img, "mutation.svg"))
+        draw_lateness(plt, t, os.path.join(img, "lateness.svg"))
+    if os.path.exists(f("integrity.tsv")):
+        draw_integrity(plt, f("integrity.tsv"), os.path.join(img, "integrity.svg"))
     if os.path.exists(f("score.tsv")):
         draw_score(plt, f("score.tsv"), os.path.join(img, "scorecard.svg"))
     if os.path.exists(f("latency.tsv")):
@@ -456,7 +677,8 @@ def cmd_draw(data="docs/img/data", img="docs/img"):
 
 
 if __name__ == "__main__":
-    cmds = {"lat": cmd_lat, "qd": cmd_qd, "score": cmd_score, "draw": cmd_draw}
+    cmds = {"lat": cmd_lat, "qd": cmd_qd, "score": cmd_score, "integ": cmd_integ,
+            "draw": cmd_draw}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(open(__file__).read().split("\nimport")[0])
     cmds[sys.argv[1]](*sys.argv[2:])

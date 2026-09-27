@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="792pt" height="428.4pt" viewBox="0 0 792 428.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 428.4 
+L 792 428.4 
+L 792 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="patch_2">
+   <path d="M 17.82 240.606 
+L 243.54 240.606 
+Q 251.46 240.606 251.46 236.322 
+L 251.46 86.49 
+Q 251.46 82.206 243.54 82.206 
+L 17.82 82.206 
+Q 9.9 82.206 9.9 86.49 
+L 9.9 236.322 
+Q 9.9 240.606 17.82 240.606 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_3">
+   <path d="M 276.408 240.606 
+L 502.128 240.606 
+Q 510.048 240.606 510.048 236.322 
+L 510.048 86.49 
+Q 510.048 82.206 502.128 82.206 
+L 276.408 82.206 
+Q 268.488 82.206 268.488 86.49 
+L 268.488 236.322 
+Q 268.488 240.606 276.408 240.606 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_4">
+   <path d="M 534.996 240.606 
+L 760.716 240.606 
+Q 768.636 240.606 768.636 236.322 
+L 768.636 86.49 
+Q 768.636 82.206 760.716 82.206 
+L 534.996 82.206 
+Q 527.076 82.206 527.076 86.49 
+L 527.076 236.322 
+Q 527.076 240.606 534.996 240.606 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_5">
+   <path d="M 17.82 413.406 
+L 243.54 413.406 
+Q 251.46 413.406 251.46 409.122 
+L 251.46 259.29 
+Q 251.46 255.006 243.54 255.006 
+L 17.82 255.006 
+Q 9.9 255.006 9.9 259.29 
+L 9.9 409.122 
+Q 9.9 413.406 17.82 413.406 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_6">
+   <path d="M 276.408 413.406 
+L 502.128 413.406 
+Q 510.048 413.406 510.048 409.122 
+L 510.048 259.29 
+Q 510.048 255.006 502.128 255.006 
+L 276.408 255.006 
+Q 268.488 255.006 268.488 259.29 
+L 268.488 409.122 
+Q 268.488 413.406 276.408 413.406 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_7">
+   <path d="M 534.996 413.406 
+L 760.716 413.406 
+Q 768.636 413.406 768.636 409.122 
+L 768.636 259.29 
+Q 768.636 255.006 760.716 255.006 
+L 534.996 255.006 
+Q 527.076 255.006 527.076 259.29 
+L 527.076 409.122 
+Q 527.076 413.406 534.996 413.406 
+z
+" style="fill: #f6f8f9"/>
+  </g>
+  <g id="patch_8">
+   <path d="M 9.9 87.246 
+L 251.46 87.246 
+L 251.46 82.206 
+L 9.9 82.206 
+z
+" style="fill: #1c6dd0"/>
+  </g>
+  <g id="patch_9">
+   <path d="M 268.488 87.246 
+L 510.048 87.246 
+L 510.048 82.206 
+L 268.488 82.206 
+z
+" style="fill: #1c6dd0"/>
+  </g>
+  <g id="patch_10">
+   <path d="M 527.076 87.246 
+L 768.636 87.246 
+L 768.636 82.206 
+L 527.076 82.206 
+z
+" style="fill: #2b8a3e"/>
+  </g>
+  <g id="patch_11">
+   <path d="M 9.9 260.046 
+L 251.46 260.046 
+L 251.46 255.006 
+L 9.9 255.006 
+z
+" style="fill: #2b8a3e"/>
+  </g>
+  <g id="patch_12">
+   <path d="M 268.488 260.046 
+L 510.048 260.046 
+L 510.048 255.006 
+L 268.488 255.006 
+z
+" style="fill: #2b8a3e"/>
+  </g>
+  <g id="patch_13">
+   <path d="M 527.076 260.046 
+L 768.636 260.046 
+L 768.636 255.006 
+L 527.076 255.006 
+z
+" style="fill: #d9480f"/>
+  </g>
+  <g id="text_1">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1c6dd0" x="27.324" y="124.20682" transform="rotate(-0 27.324 124.20682)">36.3M</text>
+  </g>
+  <g id="text_2">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="27.324" y="161.502328" transform="rotate(-0 27.324 161.502328)">model checks, 0 failures</text>
+  </g>
+  <g id="text_3">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 185.938329)">make check: 21 scenario tests on a virtual</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 199.271784)">clock and 200 randomized runs with invariants</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 211.68113)">checked after every model call</text>
+  </g>
+  <g id="text_4">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1c6dd0" x="285.912" y="124.20682" transform="rotate(-0 285.912 124.20682)">5 / 5</text>
+  </g>
+  <g id="text_5">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="285.912" y="161.502328" transform="rotate(-0 285.912 161.502328)">planted bugs caught</text>
+  </g>
+  <g id="text_6">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 184.949907)">Bugs put into the models on purpose,</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 199.259534)">one at a time: each one makes</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 212.655005)">make check fail</text>
+  </g>
+  <g id="text_7">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="544.5" y="124.20682" transform="rotate(-0 544.5 124.20682)">75–430 µs</text>
+  </g>
+  <g id="text_8">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="544.5" y="161.502328" transform="rotate(-0 544.5 161.502328)">completion lateness, p99</text>
+  </g>
+  <g id="text_9">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(544.5 185.983501)">How late the host fires the model's</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(544.5 198.285659)">timers; every target within its bound</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(544.5 211.68113)">(at most 72% of it). Found and fixed a bug</text>
+  </g>
+  <g id="text_10">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="27.324" y="297.00682" transform="rotate(-0 27.324 297.00682)">6 / 6</text>
+  </g>
+  <g id="text_11">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="27.324" y="334.302328" transform="rotate(-0 27.324 334.302328)">profiles calibrated</text>
+  </g>
+  <g id="text_12">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 357.809626)">fio against datasheets and real drives,</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 371.2028)">pass/fail per number; on a slower host</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 384.48113)">38 of 44 (misses: host limits)</text>
+  </g>
+  <g id="text_13">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2b8a3e" x="285.912" y="297.00682" transform="rotate(-0 285.912 297.00682)">56 / 56</text>
+  </g>
+  <g id="text_14">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="285.912" y="334.302328" transform="rotate(-0 285.912 334.302328)">data integrity checks</text>
+  </g>
+  <g id="text_15">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 357.809626)">crc32c verify and sha256 round trips on</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 371.145378)">every profile; the negative control</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(285.912 384.538552)">fails as it must: the check can see corruption</text>
+  </g>
+  <g id="text_16">
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #d9480f" x="544.5" y="297.00682" transform="rotate(-0 544.5 297.00682)">4</text>
+  </g>
+  <g id="text_17">
+   <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="544.5" y="334.302328" transform="rotate(-0 544.5 334.302328)">real drives compared</text>
+  </g>
+  <g id="text_18">
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(544.5 357.812688)">Micron 7300 PRO, Samsung 850 EVO,</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(544.5 371.145378)">Seagate ST2000DM006, Kingston KC3000</text>
+  </g>
+  <g id="text_19">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="9.504" y="21.00041" transform="rotate(-0 9.504 21.00041)">How we know the emulator is right</text>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="9.504" y="47.057959" transform="rotate(-0 9.504 47.057959)">Five questions, each answered by a test anyone can rerun (docs/VALIDATION.md).</text>
+  </g>
+ </g>
+</svg>

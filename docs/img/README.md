@@ -11,6 +11,8 @@ runs and checked against the numbers it shows.
 | `latency.svg` | `data/latency.tsv` | `figures.py lat`: latency percentiles of one fio job (`--output-format=json+ --lat_percentiles=1`) |
 | `queue-depth.svg` | `data/qd.tsv` | `figures.py qd`: IOPS of the 4K random read jobs at QD 1–32 |
 | `flush-reader.svg` | `data/flush.tsv` | `figures.py lat`: the QD1 read job alone and the reader of the "reader next to a writer that fsyncs" job |
+| `integrity.svg` | `data/integrity.tsv` | `figures.py integ`: the PASS/FAIL lines of `bench/integrity.sh` and of its `NEGATIVE=1` run |
+| `validation-overview.svg`, `mutation.svg`, `lateness.svg` | `data/tests.json` | the recorded results of `make check`, the planted-bug runs and the lateness table in VALIDATION.md, entered by hand; the overview also counts `data/integrity.tsv` |
 
 Where the runs came from:
 

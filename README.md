@@ -11,12 +11,15 @@ behaves functionally like on RAM, but sees the latency, throughput and
 queueing of the modelled disk.
 
 ![How it works](docs/img/architecture.svg)
+
 ![Latency percentiles of three real drives against their models](docs/img/latency.svg)
 
 How the models were checked against datasheets, real drives and their
 own specifications, and where they stop being valid:
 [docs/VALIDATION.md](docs/VALIDATION.md). How it works:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+![Validation at a glance](docs/img/validation-overview.svg)
 
 ## Targets
 
@@ -207,6 +210,10 @@ NVMe numbers above ~200K IOPS or ~4 GB/s are the limit of one server
 thread, not the model. A request can't complete faster than the floor
 (16 µs here, ~35 µs without halt polling): the PM9A3 acknowledges a
 synced write in 14 µs, the model at ~22 µs.
+
+`micron-7300` was calibrated on a second host, next to the real drive it
+imitates, with the same jobs: see [docs/VALIDATION.md](docs/VALIDATION.md)
+§3 (QD1 read 94 µs against the datasheet's 90, the real drive 117 µs).
 
 ![Reads next to a writer that fsyncs: Samsung 850 EVO, sata-consumer and sata-plp](docs/img/flush-reader.svg)
 

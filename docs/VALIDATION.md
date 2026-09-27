@@ -14,6 +14,8 @@ where the models stop being valid. Five questions, answered separately:
 The numbers below are from a KVM guest (Ubuntu 24.04, kernel 6.17, AMD
 EPYC vCPUs, guest halt polling on; see GUIDE §9) unless stated.
 
+![Validation at a glance: model checks, planted bugs, lateness, calibration, integrity, real drives](img/validation-overview.svg)
+
 ## 1. Model tests: `make check`
 
 The models run on a virtual clock (`tests/model_test.c`): a small
@@ -86,6 +88,8 @@ randomized draws, so it changes whenever a parameter is added).
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
 tree:
 
+![Five planted bugs, each caught by make check](img/mutation.svg)
+
 | planted bug | caught by |
 |---|---|
 | hdd flush acknowledges before its last write-back ends | flush timing check (scenario and randomized) |
@@ -104,6 +108,8 @@ buckets). It is the direct measure of how faithfully a given host runs
 the model, and `bench/check.py` fails a calibration run if the p99 is
 over the target's bound. The table was measured with quarter-octave
 buckets, so its quantiles may read up to 19% high.
+
+![Completion lateness per target against its bound, and the hdd fix it found](img/lateness.svg)
 
 | run (calibration jobs, 30 s each) | p50 | p99 | max | bound |
 |---|---|---|---|---|
@@ -196,14 +202,16 @@ Where the models hold and where they are too simple:
 
 ## 4. Integrity: `bench/integrity.sh`
 
-fio with `--verify=crc32c` on each of hdd (cache on, cache off),
-`sata-plp`, `nvme-plp`, `sata-consumer`, and NVMe with a volatile cache
-and no PLP. Per device: random writes with fsync then verify,
-sequential writes, a 70/30 read/write mix verified while it runs, mixed
-block sizes from 512 B to 128 KiB, and a dd round trip compared by
-sha256.
+fio with `--verify=crc32c` on each of hdd (64 MiB cache, cache off,
+`barracuda-2t`), `sata-plp`, `nvme-plp`, `sata-consumer`, `micron-7300`,
+and NVMe with a volatile cache and no PLP. Per device: random writes
+with fsync then verify, sequential writes, a 70/30 read/write mix
+verified while it runs, mixed block sizes from 512 B to 128 KiB, and a
+dd round trip compared by sha256.
 
-**Result:** 42/42 pass, 30 of them data checks (the other 12 are the
+![Integrity: every check on every device passes; the negative control fails](img/integrity.svg)
+
+**Result:** 56/56 pass, 40 of them data checks (the other 16 are the
 write and prefill passes they verify). `NEGATIVE=1` zeroes 8 MiB of the
 backing device between the random writes and their verify pass, and the
 check fails as it should ("bad magic header"), so it can see corruption;

@@ -20,7 +20,10 @@ when you report one.
   with libaio, fio on Windows) are derived from the write + fsync cycle.
   `calibrate.sh` adds QD 2–16 random reads. `REAL=` runs start 1 MiB
   into the device. Figures (`docs/img/`, `bench/figures.py`): scorecard,
-  latency percentiles against real drives, queue depth, flush stall.
+  latency percentiles against real drives, queue depth, flush stall, and
+  the tests at a glance: planted bugs, lateness, integrity.
+- `bench/integrity.sh` also checks `barracuda-2t` and `micron-7300`:
+  56 of 56 pass.
 - **hdd `--wb_window N`:** write-back picks among the N writes that
   arrived first instead of the whole cache (0, the default, keeps the old
   behaviour). **Profile `barracuda-2t`**, fitted to a real Seagate
