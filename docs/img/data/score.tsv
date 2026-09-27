@@ -1,0 +1,49 @@
+Micron 7300 PRO, the real drive	randread-qd1	randread-qd1	read	lat_mean_us	~	90	0.1	117.447
+Micron 7300 PRO, the real drive	seqread-128k	seqread-128k	read	mbps	~	3000	0.1	2713.490
+Micron 7300 PRO, the real drive	seqwrite-128k	seqwrite-128k	write	mbps	~	1550	0.1	1607.327
+Micron 7300 PRO, the real drive	randwrite-qd1	randwrite-qd1	write	lat_mean_us	<=	40	0	20.532
+Micron 7300 PRO, the real drive	randwrite-qd32	randwrite-qd32	write	iops	~	75000	0.15	162556.381
+micron-7300 model (Micron 7300 PRO datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	90	0.1	94.175
+micron-7300 model (Micron 7300 PRO datasheet)	seqread-128k	seqread-128k	read	mbps	~	3000	0.1	2841.163
+micron-7300 model (Micron 7300 PRO datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	1550	0.1	1551.510
+micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd1	randwrite-qd1	write	lat_mean_us	<=	40	0	35.552
+micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	75000	0.15	63624.379
+nvme-plp model (Samsung PM9A3 datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	80	0.1	83.372
+nvme-plp model (Samsung PM9A3 datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	2700	0.1	2475.973
+nvme-plp model (Samsung PM9A3 datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	130000	0.1	62068.931
+sata-plp model (Samsung PM883 datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	120	0.1	123.455
+sata-plp model (Samsung PM883 datasheet)	randread-qd32	randread-qd32	read	iops	~	98000	0.1	83458.451
+sata-plp model (Samsung PM883 datasheet)	seqread-128k	seqread-128k	read	mbps	~	550	0.1	553.811
+sata-plp model (Samsung PM883 datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	520	0.1	553.505
+sata-plp model (Samsung PM883 datasheet)	randwrite-qd1	randwrite-qd1	write	lat_mean_us	~	40	0.1	44.299
+sata-plp model (Samsung PM883 datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	25000	0.1	24608.959
+sata-plp model (Samsung PM883 datasheet)	randwrite-fsync	randwrite-fsync	write	iops	~	15500	0.15	12185.827
+sata-consumer model (Samsung 870 EVO datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	77	0.1	80.781
+sata-consumer model (Samsung 870 EVO datasheet)	randread-qd32	randread-qd32	read	iops	~	98000	0.1	85231.559
+sata-consumer model (Samsung 870 EVO datasheet)	seqread-128k	seqread-128k	read	mbps	~	560	0.1	553.479
+sata-consumer model (Samsung 870 EVO datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	530	0.1	554.252
+sata-consumer model (Samsung 870 EVO datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	12000	0.15	11659.901
+sata-consumer model (Samsung 870 EVO datasheet)	randwrite-fsync	randwrite-fsync	write	iops	~	280	0.15	257.825
+sata-consumer model (Samsung 870 EVO datasheet)	blocking	reader	read	lat_p50_us	>=	3000	0	3620.864
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	12200	0.1	12460.228
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	randread-qd32	randread-qd32	read	iops	~	200	0.15	193.461
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	seqread-1m	seqread-1m	read	mbps	~	205	0.1	197.246
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	205	0.1	206.989
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	seqwrite-1m-qd4	seqwrite-1m-qd4	write	mbps	~	205	0.1	206.439
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	seqwrite-1m-qd4	seqwrite-1m-qd4	write	lat_p99_us	<=	40000	0	25034.752
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	randwrite-fsync	randwrite-fsync	sync	fsync_mean_us	~	14500	0.2	12293.605
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	blocking	reader	read	lat_p50_us	>=	12000	0	24510.464
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	read-vs-cache	writer	write	lat_p99_us	<=	100000	0	13697.024
+hgst-7k8 model (HGST Ultrastar 7K8 datasheet)	read-vs-seq	reader	read	lat_p99_us	<=	100000	0	45875.200
+hgst-7k8 model, write cache off	randread-qd1	randread-qd1	read	lat_mean_us	~	12200	0.1	12234.280
+hgst-7k8 model, write cache off	randwrite-qd1	randwrite-qd1	write	lat_mean_us	~	12200	0.1	12363.907
+hgst-7k8 model, write cache off	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	78	0.1	77.948
+hgst-7k8 model, write cache off	seqwrite-1m-qd4	seqwrite-1m-qd4	write	mbps	~	205	0.1	204.664
+hgst-7k8 model, write cache off	read-vs-seq	reader	read	lat_p99_us	<=	600000	0	522190.848
+barracuda-2t model (a real Seagate ST2000DM006)	randread-qd1	randread-qd1	read	lat_mean_us	~	17500	0.1	17381.753
+barracuda-2t model (a real Seagate ST2000DM006)	randread-qd32	randread-qd32	read	iops	~	94	0.25	83.446
+barracuda-2t model (a real Seagate ST2000DM006)	seqread-1m	seqread-1m	read	mbps	~	143	0.15	145.777
+barracuda-2t model (a real Seagate ST2000DM006)	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	132	0.15	149.861
+barracuda-2t model (a real Seagate ST2000DM006)	randwrite-qd1	randwrite-qd1	write	iops	~	124	0.25	108.549
+barracuda-2t model (a real Seagate ST2000DM006)	randwrite-fsync8	randwrite-fsync8	sync	fsync_mean_us	~	100000	0.3	103183.217
+barracuda-2t model (a real Seagate ST2000DM006)	randwrite-fsync64	randwrite-fsync64	sync	fsync_mean_us	~	600000	0.2	655122.038

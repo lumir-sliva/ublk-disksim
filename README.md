@@ -11,6 +11,12 @@ behaves functionally like on RAM, but sees the latency, throughput and
 queueing of the modelled disk.
 
 ![How it works](docs/img/architecture.svg)
+![Latency percentiles of three real drives against their models](docs/img/latency.svg)
+
+How the models were checked against datasheets, real drives and their
+own specifications, and where they stop being valid:
+[docs/VALIDATION.md](docs/VALIDATION.md). How it works:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Targets
 
@@ -115,6 +121,13 @@ spread over the platter):
 | 4K random write QD1, 30 s | 108 IOPS | 124 IOPS |
 | flush after 8 / 64 scattered cached 4K writes | 103 / 656 ms | 127 / 630 ms p50, including NTFS metadata (fit 28 + 9.4 N ms) |
 
+![IOPS against queue depth: hgst-7k8, barracuda-2t and the real ST2000DM006](docs/img/queue-depth.svg)
+
+The two hdd profiles differ most in how much a deep queue helps: an
+enterprise drive reorders its queue well (`hgst-7k8`, 2.4× from QD1 to
+QD32), the consumer ST2000DM006 barely does (1.6×; `barracuda-2t` 1.5×,
+flat above QD8 where the real drive still gains a little).
+
 ### `ssd`: flash SSD, SATA or NVMe
 
 What it models (see the header of `ssd_model.c`):
@@ -194,6 +207,14 @@ NVMe numbers above ~200K IOPS or ~4 GB/s are the limit of one server
 thread, not the model. A request can't complete faster than the floor
 (16 µs here, ~35 µs without halt polling): the PM9A3 acknowledges a
 synced write in 14 µs, the model at ~22 µs.
+
+![Reads next to a writer that fsyncs: Samsung 850 EVO, sata-consumer and sata-plp](docs/img/flush-reader.svg)
+
+The difference that matters most for software on top is power-loss
+protection. Next to a writer that fsyncs every 4K write, a consumer
+SATA drive answers 94% fewer reads (a real 850 EVO: 10.7K → 612 reads/s,
+p99 6.7 ms); `sata-consumer` reproduces that (−96%, p99 3.8 ms), while
+`sata-plp` loses 41%.
 
 How these numbers were checked, what else is tested (model tests, data
 integrity, delivered timing, real drives), and where the models stop

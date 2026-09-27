@@ -132,6 +132,9 @@ Each script runs fixed fio jobs on a fresh RAM-backed device, writes
 of each number (spec sheet, published measurement, or a property of the
 model). A run that misses exits non-zero.
 
+On the development host (a KVM guest with guest halt polling, floor
+~16 µs) every profile passes:
+
 | profile | checked against | result |
 |---|---|---|
 | `hgst-7k8`, cache on | spec: seek + latency 12.2 ms, 205 MB/s; typical NCQ ~200 IOPS; production flush 13–16 ms | QD1 read 12.27 ms, QD32 195 IOPS, seq read/write 196/207 MB/s, flush 12.1 ms: all within tolerance |
@@ -141,15 +144,55 @@ model). A run that misses exits non-zero.
 | `nvme-plp` (PM9A3) | datasheet (no VWC) | QD1 read 82.4 µs (80), seq write 2537 MB/s (2700), steady random write 124K (130K), no flushes sent |
 | `sata-consumer` (870 EVO) | datasheet; published 248–311 synced writes/s | QD1 read 78.9 µs (77), QD32 96.8K (98K), seq 553/553 MB/s (560/530), steady random write 11.7K (~12K est.), synced writes 260/s |
 
-Not checked, because this host can't deliver it: NVMe reads above
+Not checked, because the host can't deliver it: NVMe reads above
 ~200K IOPS or ~4 GB/s (one server thread) and NVMe synced writes (the
 drive acknowledges faster than the host's per-request floor).
 
+The same scripts on a second, slower host (KVM guest, 16 vCPU AMD EPYC,
+linux 6.8, halt polling on, floor ~23 µs), the one with the Micron 7300
+PRO below:
+
+![Calibration scorecard: every checked number of every profile, as the deviation from its reference, with its tolerance](img/scorecard.svg)
+
+38 of the models' 44 checks pass. All six misses are the host: its one
+server thread tops out near 85K IOPS (the QD32 rows of four profiles),
+and its overhead per write (~27 µs) leaves no room under the PM883's
+40 µs write (`sata-plp` QD1 write +11%, write + fsync −21%). The hdd
+profiles pass completely. fio 3.28 (Ubuntu 22.04) reports fsync times of
+~0.3 µs with libaio; `bench/summary.py` then derives them from the
+write + fsync cycle, which reproduces the development host's measured
+values (`hgst-7k8` 12.3 ms, flushes after 8 / 64 writes 74 / 334 ms).
+
+### A real drive and its model on the same host
+
 `calibrate_ssd.sh` with `REAL=<device>` runs the same jobs on a real
 drive and checks it against the same file, so a profile and the drive
-it imitates are judged by the same numbers (the model's lateness rows
-are skipped). `micron-7300` (Micron 7300 PRO) is fitted from its
-datasheet and waits for that comparison.
+it imitates are held to the same numbers (the model's lateness rows are
+skipped; the jobs start 1 MiB into the device). The first pair: a Micron
+7300 PRO 3.84 TB passed through to the KVM guest, and `micron-7300`,
+fitted to its datasheet, on the same guest. The drive misses its own
+datasheet on QD1 reads (117 µs, spec 90) and, being mostly empty, runs
+random writes at 163K IOPS instead of the full drive's 75K (last group
+of the scorecard).
+
+![Latency percentiles: Micron 7300 PRO, Samsung 850 EVO and Seagate ST2000DM006 against their models](img/latency.svg)
+
+Where the models hold and where they are too simple:
+
+- **ST2000DM006 / `barracuda-2t`:** median 17.4 vs 17.7 ms, p99 28.7
+  vs 28.4 ms. The real drive has a rare tail (p99.9 103 ms) the model
+  lacks.
+- **850 EVO / `sata-consumer`** (fitted to the newer 870 EVO): the model
+  is ~12% fast throughout (median 80 vs 92 µs, p99 93 vs 119 µs).
+- **Micron 7300 PRO / `micron-7300`, reads alone:** the drive is slower
+  than its datasheet and bimodal (a quarter of the reads take ~170 µs
+  instead of ~115 µs; the passthrough's interrupt path is a suspect, not
+  verified), the model follows the datasheet (median 94 µs, p99 106 µs).
+- **Micron, reads next to a writer that fsyncs:** in the model about a
+  fifth of the reads wait for a whole page program (p99 758 µs); the
+  real drive delays far fewer (p99 399 µs), consistent with suspending
+  a program for a read, which the model doesn't do, but it has a rarer
+  multi-millisecond tail (p99.9 2.9 ms).
 
 ## 4. Integrity: `bench/integrity.sh`
 

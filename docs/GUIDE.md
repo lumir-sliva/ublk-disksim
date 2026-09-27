@@ -274,7 +274,10 @@ Jobs: 4K random read at QD1, QD32 (and QD128 for NVMe), 128K sequential
 read and write at QD32, 4K random write at QD1 and QD32, 4K random and
 sequential writes with an fsync after each, a reader next to a
 fsyncing writer, and a QD16 random writer keeping the buffer full next
-to a fsyncing writer.
+to a fsyncing writer. Latencies are fio's submission to completion
+(`lat`); the per-job fio output is json+ with the full histograms, which
+`bench/figures.py` turns into the figures in `docs/img/` (see its
+README there).
 
 To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
 write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the

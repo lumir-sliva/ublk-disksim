@@ -12,6 +12,15 @@ when you report one.
   the same expectations. `make LDFLAGS=-static` for older distributions.
   `make check` now catches cache space freed when a write-back starts
   instead of when it ends.
+- **Calibration latencies are submission to completion.** The scripts
+  run fio with `--lat_percentiles=1` and save json+ (full histograms);
+  `lat_p50_us`/`lat_p99_us` in `results.tsv` were completion-only
+  before, which left out ~17 µs of submission through ublk against ~2 µs
+  on a real NVMe drive. fsync times that fio reports as < 1 µs (fio 3.28
+  with libaio, fio on Windows) are derived from the write + fsync cycle.
+  `calibrate.sh` adds QD 2–16 random reads. `REAL=` runs start 1 MiB
+  into the device. Figures (`docs/img/`, `bench/figures.py`): scorecard,
+  latency percentiles against real drives, queue depth, flush stall.
 - **hdd `--wb_window N`:** write-back picks among the N writes that
   arrived first instead of the whole cache (0, the default, keeps the old
   behaviour). **Profile `barracuda-2t`**, fitted to a real Seagate

@@ -68,6 +68,34 @@ completions, and up to 64 wake-up slots, re-armed only when an earlier
 wake-up is needed. In the tests, `tests/model_test.c` implements them on
 a virtual clock.
 
+### A request's life
+
+```mermaid
+sequenceDiagram
+    participant K as kernel (ublk_drv)
+    participant S as kublk server thread
+    participant B as backing device (RAM)
+    participant M as timing model
+    K->>S: request (tag, op, lba, nr)
+    par data, at once
+        S->>B: read / write through io_uring
+        B-->>S: data done (µs)
+    and time
+        S->>M: submit(tag, op, lba, nr)
+        M-->>S: wake(t1): next internal event
+        Note over S,M: io_uring timeouts at absolute times
+        S->>M: wake() at t1
+        M-->>S: done(tag, t2)
+    end
+    Note over S: timer at t2 fires, late by the<br/>measured lateness (stats: late_us_*)
+    S->>K: complete tag, once data and timer are both done
+```
+
+The model can call `done` from `submit` itself (a cached write, a read
+it can schedule at once) or from any later `wake`. Data and time never
+wait for each other except at the end: a request completes at the later
+of the two, and the data side takes microseconds.
+
 ### Own timeline
 
 Both models keep their own time: an operation starts when its resource

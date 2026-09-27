@@ -1,0 +1,96 @@
+Samsung 850 EVO (real drive, no PLP)	alone	n	319568
+Samsung 850 EVO (real drive, no PLP)	alone	iops	10651.9
+Samsung 850 EVO (real drive, no PLP)	alone	mean	93.18
+Samsung 850 EVO (real drive, no PLP)	alone	p1	81.41
+Samsung 850 EVO (real drive, no PLP)	alone	p5	83.46
+Samsung 850 EVO (real drive, no PLP)	alone	p10	84.48
+Samsung 850 EVO (real drive, no PLP)	alone	p25	86.53
+Samsung 850 EVO (real drive, no PLP)	alone	p50	91.65
+Samsung 850 EVO (real drive, no PLP)	alone	p75	97.79
+Samsung 850 EVO (real drive, no PLP)	alone	p90	103.9
+Samsung 850 EVO (real drive, no PLP)	alone	p95	108
+Samsung 850 EVO (real drive, no PLP)	alone	p99	119.3
+Samsung 850 EVO (real drive, no PLP)	alone	p99.5	126.5
+Samsung 850 EVO (real drive, no PLP)	alone	p99.9	144.4
+Samsung 850 EVO (real drive, no PLP)	alone	p99.95	152.6
+Samsung 850 EVO (real drive, no PLP)	alone	p99.99	222.2
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	n	18361
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	iops	612.0
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	mean	1633
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p1	92.67
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p5	96.77
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p10	100.9
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p25	109.1
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p50	2703
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p75	2933
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p90	3031
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p95	3424
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p99	6717
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p99.5	7045
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p99.9	8847
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p99.95	1.717e+04
+Samsung 850 EVO (real drive, no PLP)	next to fsync writer	p99.99	4.221e+04
+sata-consumer model (no PLP)	alone	n	368888
+sata-consumer model (no PLP)	alone	iops	12295.9
+sata-consumer model (no PLP)	alone	mean	80.78
+sata-consumer model (no PLP)	alone	p1	77.31
+sata-consumer model (no PLP)	alone	p5	78.34
+sata-consumer model (no PLP)	alone	p10	78.34
+sata-consumer model (no PLP)	alone	p25	78.34
+sata-consumer model (no PLP)	alone	p50	80.38
+sata-consumer model (no PLP)	alone	p75	80.38
+sata-consumer model (no PLP)	alone	p90	85.5
+sata-consumer model (no PLP)	alone	p95	87.55
+sata-consumer model (no PLP)	alone	p99	92.67
+sata-consumer model (no PLP)	alone	p99.5	96.77
+sata-consumer model (no PLP)	alone	p99.9	114.2
+sata-consumer model (no PLP)	alone	p99.95	154.6
+sata-consumer model (no PLP)	alone	p99.99	230.4
+sata-consumer model (no PLP)	next to fsync writer	n	15264
+sata-consumer model (no PLP)	next to fsync writer	iops	508.7
+sata-consumer model (no PLP)	next to fsync writer	mean	1964
+sata-consumer model (no PLP)	next to fsync writer	p1	99.84
+sata-consumer model (no PLP)	next to fsync writer	p5	105
+sata-consumer model (no PLP)	next to fsync writer	p10	108
+sata-consumer model (no PLP)	next to fsync writer	p25	117.2
+sata-consumer model (no PLP)	next to fsync writer	p50	3621
+sata-consumer model (no PLP)	next to fsync writer	p75	3686
+sata-consumer model (no PLP)	next to fsync writer	p90	3719
+sata-consumer model (no PLP)	next to fsync writer	p95	3719
+sata-consumer model (no PLP)	next to fsync writer	p99	3785
+sata-consumer model (no PLP)	next to fsync writer	p99.5	3785
+sata-consumer model (no PLP)	next to fsync writer	p99.9	3817
+sata-consumer model (no PLP)	next to fsync writer	p99.95	3817
+sata-consumer model (no PLP)	next to fsync writer	p99.99	3850
+sata-plp model (with PLP)	alone	n	241761
+sata-plp model (with PLP)	alone	iops	8058.4
+sata-plp model (with PLP)	alone	mean	123.5
+sata-plp model (with PLP)	alone	p1	120.3
+sata-plp model (with PLP)	alone	p5	121.3
+sata-plp model (with PLP)	alone	p10	121.3
+sata-plp model (with PLP)	alone	p25	121.3
+sata-plp model (with PLP)	alone	p50	122.4
+sata-plp model (with PLP)	alone	p75	124.4
+sata-plp model (with PLP)	alone	p90	127.5
+sata-plp model (with PLP)	alone	p95	129.5
+sata-plp model (with PLP)	alone	p99	134.1
+sata-plp model (with PLP)	alone	p99.5	138.2
+sata-plp model (with PLP)	alone	p99.9	156.7
+sata-plp model (with PLP)	alone	p99.95	185.3
+sata-plp model (with PLP)	alone	p99.99	268.3
+sata-plp model (with PLP)	next to fsync writer	n	142450
+sata-plp model (with PLP)	next to fsync writer	iops	4748.2
+sata-plp model (with PLP)	next to fsync writer	mean	210
+sata-plp model (with PLP)	next to fsync writer	p1	124.4
+sata-plp model (with PLP)	next to fsync writer	p5	128.5
+sata-plp model (with PLP)	next to fsync writer	p10	132.1
+sata-plp model (with PLP)	next to fsync writer	p25	134.1
+sata-plp model (with PLP)	next to fsync writer	p50	134.1
+sata-plp model (with PLP)	next to fsync writer	p75	152.6
+sata-plp model (with PLP)	next to fsync writer	p90	510
+sata-plp model (with PLP)	next to fsync writer	p95	675.8
+sata-plp model (with PLP)	next to fsync writer	p99	790.5
+sata-plp model (with PLP)	next to fsync writer	p99.5	790.5
+sata-plp model (with PLP)	next to fsync writer	p99.9	806.9
+sata-plp model (with PLP)	next to fsync writer	p99.95	815.1
+sata-plp model (with PLP)	next to fsync writer	p99.99	888.8
