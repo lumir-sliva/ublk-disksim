@@ -21,8 +21,14 @@ make check      # model tests on a virtual clock (no root, no ublk)
 ```
 
 `stripe.c` is not built (it needs io_uring opcodes newer than liburing
-2.5); everything else from the kernel selftest server is. How the pieces
-fit together: [ARCHITECTURE.md](ARCHITECTURE.md).
+2.5); everything else from the kernel selftest server is. A binary built
+on a newer distribution needs that distribution's glibc (Ubuntu 24.04's
+needs 2.38, which 22.04 doesn't have): `make LDFLAGS=-static` links
+glibc and liburing into it, and the result runs on older ones. The
+kernel's ublk driver ignores parameter types it doesn't know (the DMA
+alignment the targets set is only known from linux 6.15 on, and is the
+default anyway). How the pieces fit together:
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 3. Bring up a disk
 

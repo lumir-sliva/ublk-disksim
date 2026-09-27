@@ -2,6 +2,8 @@
 # Standalone build of kublk (linux tools/testing/selftests/ublk) plus the
 # hdd and ssd timing targets. Needs liburing headers (liburing-dev).
 # `make check` builds and runs the model tests (no root, no ublk needed).
+# `make LDFLAGS=-static` builds a kublk that also runs on distributions
+# with an older glibc or liburing than the build host.
 
 CFLAGS ?= -O2 -g
 CFLAGS += -Wall -D_GNU_SOURCE -Iinclude
@@ -18,7 +20,7 @@ HDRS := kublk.h utils.h ublk_dep.h include/linux/ublk_cmd.h model_kublk.h \
 	$(MODEL_HDRS)
 
 kublk: $(SRCS) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(SRCS) $(LDLIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(LDLIBS)
 
 tests/model_test: tests/model_test.c $(MODEL_SRCS) $(MODEL_HDRS)
 	$(CC) $(CFLAGS) -DMODEL_CHECK_SPTF -I. -o $@ tests/model_test.c \
