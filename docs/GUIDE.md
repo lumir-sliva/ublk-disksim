@@ -243,9 +243,9 @@ for sleeps beyond ~100 µs. Guest halt polling
 18 µs on the machine this was developed on; sleeps of 200–400 µs still
 come out 10–40 µs long.
 
-**Profiles.** `sata-plp`, `nvme-plp`, `sata-consumer` (README). The
-difference that matters for most software is the flush: free with
-power-loss protection, milliseconds without it.
+**Profiles.** `sata-plp`, `nvme-plp`, `sata-consumer`, `micron-7300`
+(README). The difference that matters for most software is the flush:
+free with power-loss protection, milliseconds without it.
 
 **Stats** (`--stats FILE`):
 
@@ -265,6 +265,9 @@ power-loss protection, milliseconds without it.
 ```bash
 sudo bench/calibrate_ssd.sh 30 --profile sata-consumer
 sudo FLOOR_US=24 bench/calibrate_ssd.sh 30 --profile nvme-plp --waf 4
+# the same jobs on a real drive, judged by the same expectations
+# (writes to its first 4 GiB; refuses devices in use)
+sudo REAL=/dev/nvme0n1p1 bench/calibrate_ssd.sh 30 --profile micron-7300
 ```
 
 Jobs: 4K random read at QD1, QD32 (and QD128 for NVMe), 128K sequential

@@ -145,6 +145,12 @@ Not checked, because this host can't deliver it: NVMe reads above
 ~200K IOPS or ~4 GB/s (one server thread) and NVMe synced writes (the
 drive acknowledges faster than the host's per-request floor).
 
+`calibrate_ssd.sh` with `REAL=<device>` runs the same jobs on a real
+drive and checks it against the same file, so a profile and the drive
+it imitates are judged by the same numbers (the model's lateness rows
+are skipped). `micron-7300` (Micron 7300 PRO) is fitted from its
+datasheet and waits for that comparison.
+
 ## 4. Integrity: `bench/integrity.sh`
 
 fio with `--verify=crc32c` on each of hdd (cache on, cache off),

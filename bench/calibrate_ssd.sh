@@ -18,67 +18,107 @@
 # run ends with bench/check.py against bench/expect/<p>.tsv and exits
 # non-zero if a number is out of tolerance (EXPECT=<name> picks another
 # expectation file, EXPECT=none skips the check).
+#
+# REAL=<block device> runs the same jobs on a real drive instead, so one
+# expectation file judges the drive and its model:
+#   sudo REAL=/dev/nvme0n1p1 bench/calibrate_ssd.sh 30 --profile micron-7300
+# The options then only pick the expectations. It WRITES to the first
+# 4 GiB of the device (filled with 1M writes first, so reads hit mapped
+# data). It refuses a device smaller than 4 GiB, one with a filesystem
+# signature or partitions, and any partition of a drive that has
+# something mounted or held (a system disk's boot partitions included).
 set -euo pipefail
 
 RT=${1:-30}; shift || true
 ID=${ID:-12}
 OUT=${OUT:-/tmp/ublk-disksim-cal-ssd-$(date +%s)}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-CFG=/sys/kernel/config/nullb/ublkssd$ID
-BACK=/dev/ublkssd$ID    # null_blk configfs devices are named after the dir
-DEV=/dev/ublkb$ID
-case " $* " in *nvme*) DEPTH=${DEPTH:-128} ;; *) DEPTH=${DEPTH:-32} ;; esac
+REAL=${REAL:-}
+case " $* $REAL " in *nvme*|*micron-7300*) DEPTH=${DEPTH:-128} ;; *) DEPTH=${DEPTH:-32} ;; esac
 mkdir -p "$OUT"
 
-cleanup() {  # only what this run created
-    [ -n "${ADDED:-}" ] && { "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true; }
-    if [ -d "$CFG" ]; then
-        echo 0 > "$CFG/power"
-        rmdir "$CFG"
+if [ -n "$REAL" ]; then
+    DEV=$REAL
+    [ -b "$DEV" ] || { echo "REAL=$DEV: not a block device" >&2; exit 1; }
+    NAME=$(basename "$(readlink -f "$DEV")")
+    DISK=$(lsblk -ndo PKNAME "$DEV")
+    DISK=/dev/${DISK:-$NAME}
+    held=
+    for n in $(lsblk -nro NAME "$DISK"); do
+        held=$held$(ls "/sys/class/block/$n/holders")
+    done
+    if [ "$(blockdev --getsize64 "$DEV")" -lt $((4 << 30)) ] ||
+       [ -n "$(blkid -p -o value -s TYPE "$DEV" || true)" ] ||
+       [ "$(lsblk -nr "$DEV" | wc -l)" -gt 1 ] ||
+       [ -n "$(lsblk -nro MOUNTPOINT "$DISK" | tr -d '\n')" ] ||
+       [ -n "$held" ]; then
+        echo "REAL=$DEV: under 4 GiB, has a filesystem or partitions, or" \
+             "its drive $DISK has something mounted or held: not writing" \
+             "to it" >&2
+        exit 1
     fi
-}
+    lsblk -s -o NAME,SIZE,MODEL,SERIAL "$DEV" | tee "$OUT/device.txt"
+    fio --name=fill --filename="$DEV" --rw=write --bs=1M --size=4G --direct=1 \
+        --ioengine=libaio --iodepth=32 --output=/dev/null
+else
+    CFG=/sys/kernel/config/nullb/ublkssd$ID
+    BACK=/dev/ublkssd$ID    # null_blk configfs devices are named after the dir
+    DEV=/dev/ublkb$ID
+    DISK=/dev/ublkb$ID
 
-modprobe null_blk nr_devices=0 2>/dev/null || true
-modprobe ublk_drv
-mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
-mkdir "$CFG"            # fails if another run uses this ID: nothing to undo
-trap cleanup EXIT
-for kv in size=4096 blocksize=512 memory_backed=1 irqmode=0 queue_mode=2; do
-    echo "${kv#*=}" > "$CFG/${kv%%=*}"
-done
-echo 1 > "$CFG/power"
-# fill once so reads hit written data
-fio --name=fill --filename="$BACK" --rw=write --bs=1M --size=1G --direct=1 \
-    --ioengine=libaio --iodepth=4 --output=/dev/null
+    cleanup() {  # only what this run created
+        [ -n "${ADDED:-}" ] && { "$HERE/kublk" del -n "$ID" >/dev/null 2>&1 || true; }
+        if [ -d "$CFG" ]; then
+            echo 0 > "$CFG/power"
+            rmdir "$CFG"
+        fi
+    }
 
-mean_lat_us() {  # device: mean 4K random read latency at QD1, us
-    fio --name=floor --filename="$1" --rw=randread --bs=4k --iodepth=1 \
-        --direct=1 --ioengine=io_uring --time_based --runtime=10 \
-        --size=1G --randrepeat=0 --output-format=json |
-        python3 -c 'import json,sys; print(json.load(sys.stdin)["jobs"][0]["read"]["lat_ns"]["mean"]/1e3)'
-}
+    modprobe null_blk nr_devices=0 2>/dev/null || true
+    modprobe ublk_drv
+    mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+    mkdir "$CFG"            # fails if another run uses this ID: nothing to undo
+    trap cleanup EXIT
+    for kv in size=4096 blocksize=512 memory_backed=1 irqmode=0 queue_mode=2; do
+        echo "${kv#*=}" > "$CFG/${kv%%=*}"
+    done
+    echo 1 > "$CFG/power"
+    # fill once so reads hit written data
+    fio --name=fill --filename="$BACK" --rw=write --bs=1M --size=1G --direct=1 \
+        --ioengine=libaio --iodepth=4 --output=/dev/null
 
-if [ -z "${FLOOR_US:-}" ]; then
-    raw=$(mean_lat_us "$BACK")
-    "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --iface nvme \
-        --tr_us 100 --iface_us 0 --cmd_us 0 --ch_mbps 1e6 --iface_mbps 1e6 \
-        --floor_us 0 \
-        "$BACK" >/dev/null
+    mean_lat_us() {  # device: mean 4K random read latency at QD1, us
+        fio --name=floor --filename="$1" --rw=randread --bs=4k --iodepth=1 \
+            --direct=1 --ioengine=io_uring --time_based --runtime=10 \
+            --size=1G --randrepeat=0 --output-format=json |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["jobs"][0]["read"]["lat_ns"]["mean"]/1e3)'
+    }
+
+    if [ -z "${FLOOR_US:-}" ]; then
+        raw=$(mean_lat_us "$BACK")
+        "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --iface nvme \
+            --tr_us 100 --iface_us 0 --cmd_us 0 --ch_mbps 1e6 --iface_mbps 1e6 \
+            --floor_us 0 \
+            "$BACK" >/dev/null
+        ADDED=1
+        udevadm settle
+        fixed=$(mean_lat_us "$DEV")
+        "$HERE/kublk" del -n "$ID"
+        ADDED=
+        FLOOR_US=$(python3 -c "print(max(0, round($fixed - 100 - $raw, 1)))")
+        echo "floor: fixed 100 us device $fixed us - 100 - null_blk $raw us = $FLOOR_US us"
+    fi
+
+    "$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --floor_us "$FLOOR_US" \
+        --stats "$OUT/model.stats" "$@" "$BACK" | tee "$OUT/kublk.txt"
     ADDED=1
     udevadm settle
-    fixed=$(mean_lat_us "$DEV")
-    "$HERE/kublk" del -n "$ID"
-    ADDED=
-    FLOOR_US=$(python3 -c "print(max(0, round($fixed - 100 - $raw, 1)))")
-    echo "floor: fixed 100 us device $fixed us - 100 - null_blk $raw us = $FLOOR_US us"
 fi
-
-"$HERE/kublk" add -t ssd -n "$ID" -q 1 -d "$DEPTH" --floor_us "$FLOOR_US" \
-    --stats "$OUT/model.stats" "$@" "$BACK" | tee "$OUT/kublk.txt"
-ADDED=1
-udevadm settle
-echo "device $DEV: depth $DEPTH rotational $(cat /sys/block/ublkb$ID/queue/rotational)" \
-     "write_cache '$(cat /sys/block/ublkb$ID/queue/write_cache)'"
+# the whole drive: it holds the queue settings, and a partition's own
+# stat file may miss the flushes its fsyncs cause
+SYS=/sys/class/block/${DISK#/dev/}
+echo "device $DEV: depth $DEPTH rotational $(cat "$SYS/queue/rotational")" \
+     "write_cache '$(cat "$SYS/queue/write_cache")'"
 
 summary() {  # fio json, label
     python3 "$HERE/bench/summary.py" "$1" "$2" us "$OUT/results.tsv"
@@ -92,8 +132,8 @@ run() {  # name, fio args...
     summary "$OUT/$name.json" "$name"
 }
 
-# field 16 of /sys/block/<dev>/stat: flush requests completed
-flushes() { awk '{print $16}' "/sys/block/ublkb$ID/stat"; }
+# field 16 of /sys/class/block/<drive>/stat: flush requests completed
+flushes() { awk '{print $16}' "$SYS/stat"; }
 
 run randread-qd1     --rw=randread --bs=4k --iodepth=1
 run randread-qd32    --rw=randread --bs=4k --iodepth=32
@@ -127,10 +167,12 @@ fio --filename="$DEV" --direct=1 --ioengine=io_uring \
     --name=fsyncer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 \
     --offset=2G --size=2G >/dev/null
 summary "$OUT/full-fsync.json" full-fsync
-echo "flushes seen by the kernel: $(flushes)" \
-     "(the model's own count is in $OUT/model.stats after teardown)"
-
-cat "$OUT/model.stats"
+echo "flushes seen by the kernel: $(flushes)"
+STATS=
+if [ -z "$REAL" ]; then
+    STATS=$OUT/model.stats    # the model's own counts; final after teardown
+    cat "$STATS"
+fi
 echo "results in $OUT"
 
 # which expectations: a stock profile alone (none given = sata-plp)
@@ -149,5 +191,5 @@ elif [ "$expect" = none ] || [ ! -f "$HERE/bench/expect/$expect.tsv" ]; then
     echo "check: skipped (no expectations for these parameters; EXPECT=<name> to force)"
 else
     python3 "$HERE/bench/check.py" "$OUT/results.tsv" \
-        "$HERE/bench/expect/$expect.tsv" "$OUT/model.stats"
+        "$HERE/bench/expect/$expect.tsv" $STATS
 fi

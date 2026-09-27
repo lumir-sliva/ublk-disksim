@@ -6,6 +6,12 @@ when you report one.
 
 ## Unreleased
 
+- **ssd profile `micron-7300`** (Micron 7300 PRO 3.84 TB, NVMe, PLP, no
+  volatile cache), from the datasheet; no existing profile changes.
+  `calibrate_ssd.sh REAL=<device>` runs its jobs on a real drive against
+  the same expectations. `make LDFLAGS=-static` for older distributions.
+  `make check` now catches cache space freed when a write-back starts
+  instead of when it ends.
 - **hdd `--wb_window N`:** write-back picks among the N writes that
   arrived first instead of the whole cache (0, the default, keeps the old
   behaviour). **Profile `barracuda-2t`**, fitted to a real Seagate

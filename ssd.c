@@ -197,14 +197,14 @@ static void ssd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 
 static void ssd_usage(const struct ublk_tgt_ops *ops)
 {
-	printf("\tssd: [--profile sata-plp|nvme-plp|sata-consumer] "
-	       "[--iface sata|nvme]\n"
-	       "\t     [--iface_mbps X] [--cmd_us X] [--iface_us X] [--dies N] "
-	       "[--page_kb N]\n"
-	       "\t     [--tr_us X] [--ch_mbps X] [--tprog_us X] [--waf X] "
-	       "[--buf_mb N]\n"
-	       "\t     [--plp 0|1] [--vwc 0|1] [--flush_us X] [--floor_us X] "
-	       "[--stats FILE]\n"
+	printf("\tssd: [--profile sata-plp|nvme-plp|sata-consumer|micron-7300]\n"
+	       "\t     [--iface sata|nvme]"
+	       " [--iface_mbps X] [--cmd_us X] [--iface_us X]\n"
+	       "\t     [--dies N] [--page_kb N]"
+	       " [--tr_us X] [--ch_mbps X] [--tprog_us X]\n"
+	       "\t     [--waf X] [--buf_mb N]"
+	       " [--plp 0|1] [--vwc 0|1] [--flush_us X]\n"
+	       "\t     [--floor_us X] [--stats FILE]\n"
 	       "\t     BACKING_DEV (use -q 1; -d 32 for sata, -d 128 for nvme)\n");
 }
 

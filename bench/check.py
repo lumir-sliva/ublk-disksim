@@ -6,7 +6,8 @@
 # expect.tsv: label  job  rw  metric  kind  value  tolerance  source
 #   kind "~": within tolerance (a fraction) of value; "<=" / ">=": a bound;
 #   "=": exactly value. label "stats" takes the metric from the model's
-#   stats file (e.g. late_us_p99). Lines starting with # are comments.
+#   stats file (e.g. late_us_p99); without a stats file (a real drive)
+#   those lines are skipped. Lines starting with # are comments.
 # Prints one line per expectation and exits 1 if any fails or is missing.
 import sys
 
@@ -32,7 +33,8 @@ def load_stats(path):
 
 def main():
     results = load_results(sys.argv[1])
-    stats = load_stats(sys.argv[3] if len(sys.argv) > 3 else None)
+    have_stats = len(sys.argv) > 3
+    stats = load_stats(sys.argv[3] if have_stats else None)
     bad = 0
     for line in open(sys.argv[2]):
         if not line.strip() or line.startswith("#"):
@@ -40,6 +42,9 @@ def main():
         label, job, rw, metric, kind, value, tol, source = \
             line.rstrip("\n").split("\t")
         value, tol = float(value), float(tol)
+        if label == "stats" and not have_stats:
+            print(f"SKIP  {label} {metric}: no model stats (real drive)")
+            continue
         got = stats.get(metric) if label == "stats" else \
             results.get((label, job, rw, metric))
         if got is None:

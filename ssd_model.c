@@ -518,6 +518,16 @@ static const struct {
 		.tprog_us = 390, .waf = 13.7, .buf_mb = 32,
 		.plp = 0, .vwc = 1, .flush_us = 3200,
 	} },
+	/*
+	 * Micron 7300 PRO 3.84 TB M.2: enterprise NVMe (PCIe 3 x4), PLP,
+	 * no VWC; 64 dies of 512 Gb 96-layer TLC
+	 */
+	{ "micron-7300", {
+		.nvme = 1, .iface_mbps = 3000, .cmd_us = 0, .iface_us = 23.6,
+		.dies = 64, .page_kb = 16, .tr_us = 60, .ch_mbps = 800,
+		.tprog_us = 656, .waf = 5.0, .buf_mb = 64,
+		.plp = 1, .vwc = 0, .flush_us = 0,
+	} },
 };
 
 const struct ssd_params *ssd_profile(const char *name)

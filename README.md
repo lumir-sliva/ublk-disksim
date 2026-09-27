@@ -143,33 +143,38 @@ Not modelled: garbage collection as a process (idle-time GC, fill level),
 SLC caching, program/erase suspend, reads from the write buffer, mapping
 table misses, TRIM, multiple NVMe queues.
 
-| option | meaning | `sata-plp` | `nvme-plp` | `sata-consumer` |
-|---|---|---|---|---|
-| `--profile` | named parameter set, applied first | | | |
-| `--iface` | `sata` or `nvme` | sata | nvme | sata |
-| `--iface_mbps` | host link rate | 560 | 6900 | 560 |
-| `--cmd_us` | link time per command | 3 | 0 | 3 |
-| `--iface_us` | controller latency per command | 29 | 14 | 17.5 |
-| `--dies` | flash dies | 32 | 64 | 16 |
-| `--page_kb` | program unit | 16 | 16 | 16 |
-| `--tr_us` | page read, incl. ECC and lookup | 75 | 62 | 46 |
-| `--ch_mbps` | flash channel rate | 800 | 1200 | 1200 |
-| `--tprog_us` | page program | 700 | 400 | 390 |
-| `--waf` | program units per page of random writes | 7.3 | 4.9 | 13.7 |
-| `--buf_mb` | write buffer | 32 | 64 | 32 |
-| `--plp` | power-loss protection | 1 | 1 | 0 |
-| `--vwc` | advertise a volatile write cache | 1 | 0 | 1 |
-| `--flush_us` | flush cost once drained | 15 | 0 | 3200 |
-| `--floor_us` | host overhead to subtract | 0 | 0 | 0 |
-| `--stats` | file rewritten once a second with model counters | | | |
+| option | meaning | `sata-plp` | `nvme-plp` | `sata-consumer` | `micron-7300` |
+|---|---|---|---|---|---|
+| `--profile` | named parameter set, applied first | | | | |
+| `--iface` | `sata` or `nvme` | sata | nvme | sata | nvme |
+| `--iface_mbps` | host link rate | 560 | 6900 | 560 | 3000 |
+| `--cmd_us` | link time per command | 3 | 0 | 3 | 0 |
+| `--iface_us` | controller latency per command | 29 | 14 | 17.5 | 23.6 |
+| `--dies` | flash dies | 32 | 64 | 16 | 64 |
+| `--page_kb` | program unit | 16 | 16 | 16 | 16 |
+| `--tr_us` | page read, incl. ECC and lookup | 75 | 62 | 46 | 60 |
+| `--ch_mbps` | flash channel rate | 800 | 1200 | 1200 | 800 |
+| `--tprog_us` | page program | 700 | 400 | 390 | 656 |
+| `--waf` | program units per page of random writes | 7.3 | 4.9 | 13.7 | 5.0 |
+| `--buf_mb` | write buffer | 32 | 64 | 32 | 64 |
+| `--plp` | power-loss protection | 1 | 1 | 0 | 1 |
+| `--vwc` | advertise a volatile write cache | 1 | 0 | 1 | 0 |
+| `--flush_us` | flush cost once drained | 15 | 0 | 3200 | 0 |
+| `--floor_us` | host overhead to subtract | 0 | 0 | 0 | 0 |
+| `--stats` | file rewritten once a second with model counters | | | | |
 
-The profiles follow Samsung datasheets: PM883 960 GB (`sata-plp`), PM9A3
-U.2 1.92 TB (`nvme-plp`, "No VWC present"), 870 EVO 1 TB
-(`sata-consumer`). Latencies and IOPS are the datasheet's; steady-state
-random write sets `waf` (for the 870 EVO no full-drive figure is
-published, 12K IOPS is an estimate); `flush_us` is fitted to published
-4K write + fsync measurements at QD1 (Ceph community SSD lists: PM883
-15.5K/s, PM9A3 70K/s, 870 EVO 248–311/s). Buffer sizes are assumptions.
+The profiles follow datasheets: Samsung PM883 960 GB (`sata-plp`),
+Samsung PM9A3 U.2 1.92 TB (`nvme-plp`, "No VWC present"), Samsung 870
+EVO 1 TB (`sata-consumer`), Micron 7300 PRO M.2 3.84 TB (`micron-7300`,
+PCIe 3 x4, power-loss protection, no volatile cache). Latencies and IOPS
+are the datasheet's; steady-state random write sets `waf` (for the 870
+EVO no full-drive figure is published, 12K IOPS is an estimate);
+`flush_us` is fitted to published 4K write + fsync measurements at QD1
+(Ceph community SSD lists: PM883 15.5K/s, PM9A3 70K/s, 870 EVO
+248–311/s). Buffer sizes are assumptions. `micron-7300` is not yet
+checked on a server; on the model tests' virtual clock it gives the
+datasheet's 90 µs read, 25 µs write, 3000 / 1548 MB/s and 75.7K steady
+random writes.
 
 Calibration (`bench/calibrate_ssd.sh 30`, KVM guest with guest halt
 polling, floor measured 15.8–16.4 µs, 4 GiB device):
