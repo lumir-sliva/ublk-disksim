@@ -6,6 +6,11 @@ when you report one.
 
 ## Unreleased
 
+- **ssd `--susp_us X`: program suspend.** A read that finds its die
+  programming waits `X` µs (the program's next suspend point) instead
+  of the rest of the program; the program resumes after the read. 0,
+  the default and every profile's value, keeps the old behaviour; no
+  result changes. New stats field `read_suspends`.
 - **ssd profile `micron-7300`** (Micron 7300 PRO 3.84 TB, NVMe, PLP, no
   volatile cache), from the datasheet; no existing profile changes.
   `calibrate_ssd.sh REAL=<device>` runs its jobs on a real drive against

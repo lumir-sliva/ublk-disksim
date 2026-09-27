@@ -192,6 +192,14 @@ static void check_state(struct sim *s)
 		      (unsigned long long)m->buf_bytes,
 		      (unsigned long long)sum);
 		CHECK(m->buf_bytes <= m->buf_cap, "buffer over capacity");
+		for (q = 0; q < m->p.dies; q++)
+			CHECK(m->die_free[q] == (m->prog_end[q] > m->read_end[q] ?
+				m->prog_end[q] : m->read_end[q]),
+			      "die %llu: free at %llu, program to %llu, reads to %llu",
+			      (unsigned long long)q,
+			      (unsigned long long)m->die_free[q],
+			      (unsigned long long)m->prog_end[q],
+			      (unsigned long long)m->read_end[q]);
 	}
 }
 
@@ -933,6 +941,114 @@ static void ssd_flushes(void)
 	sim_free(&s);
 }
 
+/*
+ * One die, one page of writes costing one unit: its program starts once
+ * the data is on the drive. Returns that start.
+ */
+static __u64 ssd_one_program(struct sim *s, const struct ssd_params *p)
+{
+	__u64 start = s->now + p->cmd_us * 1e3 +
+		xfer_ns_of(p->iface_mbps, p->page_kb << 10);
+
+	sim_submit(s, MODEL_WRITE, 8 * 999, p->page_kb * 2, NULL);
+	return start;
+}
+
+/* submit a 4K read at t; its latency */
+static double ssd_read_at(struct sim *s, __u64 t, __u64 lba)
+{
+	int tag;
+
+	sim_run_until(s, t);
+	tag = sim_submit(s, MODEL_READ, lba, 8, NULL);
+	sim_drain(s, s->now + SEC);
+	return s->rq[tag].done_at - s->rq[tag].sub;
+}
+
+static void ssd_suspend(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	double lat, want, u, die_read;
+	struct sim s;
+	__u64 s0, t1;
+	int a, b, f;
+
+	p.dies = 1;
+	p.waf = 1;
+	p.plp = 0;		/* so a flush shows when the die's programs end */
+	p.vwc = 1;
+	u = ssd_unit_ns(&p);
+	die_read = p.tr_us * 1e3 + xfer_ns_of(p.ch_mbps, 4096);
+
+	cur_test = "ssd: susp_us 0, a read on a programming die waits for the program";
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	lat = ssd_read_at(&s, s0 + 100 * US, 8 * 5000);
+	want = u - 100 * US + ssd_read_ns(&p);
+	CHECK(fabs(lat - want) < 5, "read %.3f us, rest of the program + read = %.3f us",
+	      lat / 1e3, want / 1e3);
+	sim_free(&s);
+
+	p.susp_us = 20;
+	cur_test = "ssd: with susp_us a read on a programming die waits susp_us";
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	t1 = s0 + 100 * US;
+	sim_run_until(&s, t1);
+	a = sim_submit(&s, MODEL_READ, 8 * 5000, 8, NULL);
+	want = p.susp_us * 1e3 + ssd_read_ns(&p);
+	CHECK(fabs((double)(s.rq[a].done_at - s.rq[a].sub) - want) < 5,
+	      "read %.3f us, susp_us + read = %.3f us",
+	      (s.rq[a].done_at - s.rq[a].sub) / 1e3, want / 1e3);
+
+	cur_test = "ssd: a suspended program resumes after the read, later by its die time";
+	ssd_one_program(&s, &p);
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	want = s0 + 2 * u + die_read + p.flush_us * 1e3;
+	CHECK(fabs((double)s.rq[f].done_at - want) < 5,
+	      "flush after the second page at %.3f us, two programs + read = %.3f us",
+	      (s.rq[f].done_at - s0) / 1e3, (want - s0) / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: without PLP a flush waits for the suspended program to finish";
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	sim_run_until(&s, s0 + 100 * US);
+	sim_submit(&s, MODEL_READ, 8 * 5000, 8, NULL);
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	want = s0 + u + die_read + p.flush_us * 1e3;
+	CHECK(fabs((double)s.rq[f].done_at - want) < 5,
+	      "flush at %.3f us, program + read = %.3f us",
+	      (s.rq[f].done_at - s0) / 1e3, (want - s0) / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: a read with less than susp_us of program left waits for its end";
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	lat = ssd_read_at(&s, s0 + (__u64)u - 10 * US, 8 * 5000);
+	want = 10 * US + ssd_read_ns(&p);
+	CHECK(fabs(lat - want) < 5, "read %.3f us, 10 us of program + read = %.3f us",
+	      lat / 1e3, want / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: a read arriving during a suspension queues without another susp_us";
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	t1 = s0 + 100 * US;
+	sim_run_until(&s, t1);
+	sim_submit(&s, MODEL_READ, 8 * 5000, 8, NULL);
+	sim_run_until(&s, t1 + US);
+	b = sim_submit(&s, MODEL_READ, 8 * 6000, 8, NULL);
+	want = p.susp_us * 1e3 + die_read + ssd_read_ns(&p) - US;
+	CHECK(fabs((double)(s.rq[b].done_at - s.rq[b].sub) - want) < 5,
+	      "second read %.3f us, susp_us + first read's die time + read - 1 us "
+	      "= %.3f us", (s.rq[b].done_at - s.rq[b].sub) / 1e3, want / 1e3);
+	sim_drain(&s, s.now + SEC);
+	sim_free(&s);
+}
+
 /* ---- randomized invariants --------------------------------------- */
 
 static void random_workload(struct sim *s, __u64 max_nr, int flushes,
@@ -1020,6 +1136,7 @@ static void ssd_random(int runs)
 		p.buf_mb = buf[rnd_below(3)];
 		p.waf = 1 + rnd_below(5);
 		p.floor_us = rnd_below(2) ? 0 : 20;
+		p.susp_us = rnd_below(2) ? 0 : 20;
 		p.cmd_us = p.nvme ? 0 : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
@@ -1045,6 +1162,7 @@ int main(int argc, char **argv)
 	ssd_die_parallelism();
 	ssd_rates();
 	ssd_flushes();
+	ssd_suspend();
 	hdd_random(runs);
 	ssd_random(runs);
 

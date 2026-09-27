@@ -140,7 +140,9 @@ What it models (see the header of `ssd_model.c`):
 
 - flash dies with their own timelines: a page read takes `tr_us` on its
   die (die = page number mod `dies`) plus the channel transfer, and waits
-  for whatever that die is doing, a program included;
+  for whatever that die is doing, a program included. With `--susp_us`
+  a read that finds its die programming waits only that long (the
+  program's next suspend point); the program resumes after the read;
 - a host link (`iface_mbps`, plus `cmd_us` of link time per command; on
   SATA that command rate caps 4K random reads near 100K IOPS, the NVMe
   profile sets it to 0) and a controller latency `iface_us` per command;
@@ -159,8 +161,8 @@ What it models (see the header of `ssd_model.c`):
   completion so that the parameters are device latencies (docs/GUIDE.md).
 
 Not modelled: garbage collection as a process (idle-time GC, fill level),
-SLC caching, program/erase suspend, reads from the write buffer, mapping
-table misses, TRIM, multiple NVMe queues.
+SLC caching, erase suspend and limits on program suspends, reads from
+the write buffer, mapping table misses, TRIM, multiple NVMe queues.
 
 | option | meaning | `sata-plp` | `nvme-plp` | `sata-consumer` | `micron-7300` |
 |---|---|---|---|---|---|
@@ -175,6 +177,7 @@ table misses, TRIM, multiple NVMe queues.
 | `--ch_mbps` | flash channel rate | 800 | 1200 | 1200 | 800 |
 | `--tprog_us` | page program | 700 | 400 | 390 | 656 |
 | `--waf` | program units per page of random writes | 7.3 | 4.9 | 13.7 | 5.0 |
+| `--susp_us` | program suspend for a read (0: none) | 0 | 0 | 0 | 0 |
 | `--buf_mb` | write buffer | 32 | 64 | 32 | 64 |
 | `--plp` | power-loss protection | 1 | 1 | 0 | 1 |
 | `--vwc` | advertise a volatile write cache | 1 | 0 | 1 | 0 |

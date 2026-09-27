@@ -154,13 +154,13 @@ z
 " style="fill: #d9480f"/>
   </g>
   <g id="text_1">
-   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1c6dd0" x="27.324" y="124.20682" transform="rotate(-0 27.324 124.20682)">36.3M</text>
+   <text style="font-weight: 700; font-size: 30px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1c6dd0" x="27.324" y="124.20682" transform="rotate(-0 27.324 124.20682)">207.2M</text>
   </g>
   <g id="text_2">
    <text style="font-weight: 700; font-size: 12px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="27.324" y="161.502328" transform="rotate(-0 27.324 161.502328)">model checks, 0 failures</text>
   </g>
   <g id="text_3">
-   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 185.938329)">make check: 21 scenario tests on a virtual</text>
+   <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 185.938329)">make check: 22 scenario tests on a virtual</text>
    <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 199.271784)">clock and 200 randomized runs with invariants</text>
    <text style="font-size: 9.8px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(27.324 211.68113)">checked after every model call</text>
   </g>

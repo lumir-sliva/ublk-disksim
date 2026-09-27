@@ -22,6 +22,7 @@ struct ssd_params {
 	unsigned	plp;		/* buffer survives power loss */
 	unsigned	vwc;		/* advertise a volatile write cache */
 	double		flush_us;	/* FLUSH cost once drained */
+	double		susp_us;	/* program suspend for a read, 0: none */
 	double		floor_us;	/* host overhead to subtract */
 	char		stats[256];	/* stats file, rewritten once a second */
 };
@@ -59,11 +60,15 @@ struct ssd_model {
 	struct ssd_params p;
 	struct model_env env;
 	__u64 page_bytes, buf_cap;
-	__u64 tr_ns, cmd_ns, iface_ns, flush_ns, floor_ns, unit_ns;
+	__u64 tr_ns, cmd_ns, iface_ns, flush_ns, floor_ns, unit_ns, susp_ns;
 	unsigned depth;
 	__u64 now;
 
-	__u64 *die_free;
+	/*
+	 * Per die: end of all work, of its program work (pushed back by
+	 * reads that suspended it), and of its last read.
+	 */
+	__u64 *die_free, *prog_end, *read_end;
 
 	/* host link busy intervals, sorted, non-overlapping */
 	struct ssd_iv *link;
@@ -105,6 +110,7 @@ struct ssd_model {
 
 	/* stats */
 	__u64 n_read, n_write, n_flush, n_buf_full, n_blocked, n_read_wait;
+	__u64 n_read_susp;
 	__u64 seq_bytes, rnd_bytes;
 	double units_done;
 	__u64 flush_ns_sum, flush_ns_max, blocked_ns_sum, read_wait_ns_sum;

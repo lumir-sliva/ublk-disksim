@@ -47,6 +47,7 @@ unit:
 | ssd | QD1 read, write | exactly the documented sums (`tr_us` + channel + `cmd_us` + link + `iface_us`) |
 | ssd | `floor_us` | subtracted exactly; never below arrival |
 | ssd | reads on different dies | overlap; on one die they queue (≥ n × `tr_us`) |
+| ssd | read on a programming die | `susp_us` 0: waits for the rest of the program; with `susp_us`: waits `susp_us`, or the rest of the program if shorter; a second read joins without another `susp_us`; the die's next program, and a flush without PLP, wait for the program's end pushed back by the read's die time |
 | ssd | SATA QD32 reads | 1 / (`cmd_us` + 4K / link), ±3% |
 | ssd | steady random writes | dies × page / (unit × `waf`), ±5% |
 | ssd | sequential writes | min(link, dies × page / unit), ±5% (SATA and NVMe) |
@@ -58,7 +59,7 @@ unit:
 **Randomized tests:** 100 hdd and 100 ssd runs with random parameters
 (cache size, NCQ window, rpm, age limit, write-back window; SATA/NVMe,
 PLP, VWC, dies, page
-size, buffer, WAF, floor) and random workloads (reads, writes, flushes,
+size, buffer, WAF, floor, program suspend) and random workloads (reads, writes, flushes,
 sizes up to 1 MiB, partly sequential, random gaps between arrivals, at
 most a queue depth in flight). The simulator advances the clock to each
 arrival before delivering the events due by then, so these runs mostly
@@ -82,7 +83,7 @@ The test build also compiles the hdd model with `-DMODEL_CHECK_SPTF`,
 which checks every write-back choice against a scan of the whole dirty
 set.
 
-**Result:** 36,292,033 checks, 0 failures (the count depends on the
+**Result:** 207,207,533 checks, 0 failures (the count depends on the
 randomized draws, so it changes whenever a parameter is added).
 
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
@@ -97,6 +98,12 @@ tree:
 | hdd serves its queue in arrival order (no NCQ reordering) | QD32 ≈ QD1; the starvation control |
 | ssd reads ignore die contention | one-die queueing test |
 | hdd write-back frees cache space when it starts, not ends | cache capacity scenario: one 64K write too many acknowledged before any write-back could end |
+
+The program suspend path was checked the same way: each of five planted
+bugs (the program not pushed back by the read, a flush not waiting for
+the push, a read joining a suspension paying `susp_us` again, no
+`susp_us` wait, suspending a program that ends sooner) fails one of the
+suspend scenarios.
 
 ## 2. Lateness: does the host deliver the timing?
 
@@ -199,6 +206,30 @@ Where the models hold and where they are too simple:
   real drive delays far fewer (p99 399 µs), consistent with suspending
   a program for a read, which the model doesn't do, but it has a rarer
   multi-millisecond tail (p99.9 2.9 ms).
+
+**Program suspend, tried against the drive.** `--susp_us 20` (a suspend
+point within ~24 µs, after the ISPP verify phase in Wu and He, FAST '12)
+on `micron-7300`, and the same with `--waf 1`, since the mostly empty
+drive writes at a write amplification near 1. The reader next to the
+fsync writer, total latency in µs, two runs of the drive:
+
+| | p50 | p90 | p95 | p99 | p99.5 | p99.9 | > 200 µs |
+|---|---|---|---|---|---|---|---|
+| drive, run 1 / run 2 | 115 / 116 | 169 / 167 | 173 / 171 | 403 / 354 | 1532 / 1221 | 2769 / 2703 | 2.2 / 2.6% |
+| `micron-7300` | 111 | 522 | 643 | 758 | 782 | 791 | 22% |
+| `--susp_us 20` | 103 | 121 | 126 | 136 | 140 | 157 | 0.03% |
+| `--waf 1` | 105 | 120 | 151 | 651 | 709 | 766 | 4.5% |
+| `--waf 1 --susp_us 20` | 98 | 112 | 116 | 127 | 132 | 153 | 0.03% |
+
+Suspend removes what the drive doesn't show (a fifth of the reads
+waiting for a program) but also every long wait, and the drive has
+some: about 0.5% of its reads wait more than 1 ms, longer than one of
+the model's program units. That fits a drive that suspends most of the
+time but not always (a limit on suspends per program, or erases), with
+program operations of a few ms. The model has neither, so no single
+`susp_us` matches both ends, and the profile keeps `susp_us 0`: over
+p50–p99.9 its percentiles are closer to the drive's (mean |log ratio|
+0.72 against 1.0 with suspend).
 
 ## 4. Integrity: `bench/integrity.sh`
 

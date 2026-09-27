@@ -8,10 +8,14 @@
  *
  *  - `dies` flash dies, each with its own timeline. A read of a page
  *    (die = page number mod dies) occupies its die for tr_us plus the
- *    transfer over the flash channel; it waits for whatever the die is
- *    doing, a program included (no program suspend). Channels are not a
- *    shared resource: their total rate is above the host link on the
- *    drives this was fitted to;
+ *    transfer over the flash channel. It waits for whatever the die is
+ *    doing, a program included, unless susp_us is set: then a read that
+ *    finds the die programming starts susp_us later, at the program's
+ *    next suspend point (reads arriving meanwhile join it), and the
+ *    program resumes after the reads, later by their die time. Flushes
+ *    wait for the resumed program; buffer space is freed at the page's
+ *    unsuspended end. Channels are not a shared resource: their total
+ *    rate is above the host link on the drives this was fitted to;
  *  - one host link: each command occupies it for cmd_us plus its data at
  *    iface_mbps (reads after the flash read, writes on arrival), then
  *    iface_us of controller latency until completion;
@@ -36,10 +40,10 @@
  *    latencies.
  *
  * Not modelled: garbage collection as a process (idle-time GC, fill level,
- * over-provisioning), SLC caching, program/erase suspend, reads served
- * from the write buffer, mapping-table cache misses, TRIM, thermal
- * throttling, multiple NVMe queues. Calibrate against the drive you want
- * to imitate before trusting absolute numbers.
+ * over-provisioning), SLC caching, erase suspend, a limit on suspends per
+ * program, reads served from the write buffer, mapping-table cache misses,
+ * TRIM, thermal throttling, multiple NVMe queues. Calibrate against the
+ * drive you want to imitate before trusting absolute numbers.
  *
  * No clock and no I/O of its own: time, completions and wake-ups go
  * through struct model_env (model.h). The kublk target is ssd.c.
@@ -283,6 +287,7 @@ static int run_units(struct ssd_model *m)
 		}
 		u = pg->units < 1 ? pg->units : 1;
 		m->die_free[best] = s + (__u64)(u * m->unit_ns);
+		m->prog_end[best] = m->die_free[best];
 		pg->end = max_u64(pg->end, m->die_free[best]);
 		pg->units -= u;
 		m->units_done += u;
@@ -381,6 +386,33 @@ static void pump(struct ssd_model *m)
 		m->env.wake(m->env.ctx, next);
 }
 
+/* a read of `len` die time reaches die d at t: when it starts on the die */
+static __u64 die_read(struct ssd_model *m, unsigned d, __u64 t, __u64 len)
+{
+	__u64 s, *pe = &m->prog_end[d], *re = &m->read_end[d];
+
+	/* programming at t, and no read queued behind the program */
+	if (m->susp_ns && *pe > t && *re < *pe) {
+		if (*re > t)			/* suspended: join the reads */
+			s = *re;
+		else if (t + m->susp_ns >= *pe)	/* done before it could suspend */
+			s = *pe;
+		else
+			s = t + m->susp_ns;
+		if (s < *pe) {
+			*pe += len;
+			/* flushes without PLP wait for the resumed program */
+			m->max_end_started = max_u64(m->max_end_started, *pe);
+			m->n_read_susp++;
+		}
+	} else {
+		s = max_u64(m->die_free[d], t);
+	}
+	*re = s + len;
+	m->die_free[d] = max_u64(*pe, *re);
+	return s;
+}
+
 static void do_read(struct ssd_model *m, const struct ssd_req *r)
 {
 	__u64 off = r->lba << 9, end = off + (r->nr << 9), fdone = r->t, p;
@@ -390,13 +422,12 @@ static void do_read(struct ssd_model *m, const struct ssd_req *r)
 	for (p = off / m->page_bytes; p * m->page_bytes < end; p++) {
 		__u64 s0 = max_u64(p * m->page_bytes, off);
 		__u64 e0 = min_u64((p + 1) * m->page_bytes, end);
-		__u64 *df = &m->die_free[p % m->p.dies];
-		__u64 s = max_u64(*df, r->t);
+		__u64 len = m->tr_ns + xfer_ns(m->p.ch_mbps, e0 - s0);
+		__u64 s = die_read(m, p % m->p.dies, r->t, len);
 
 		if (s - r->t > wait)
 			wait = s - r->t;
-		*df = s + m->tr_ns + xfer_ns(m->p.ch_mbps, e0 - s0);
-		fdone = max_u64(fdone, *df);
+		fdone = max_u64(fdone, s + len);
 	}
 	if (wait) {
 		m->n_read_wait++;
@@ -548,7 +579,7 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	if (p->dies == 0 || p->page_kb < 4 || p->tr_us <= 0 ||
 	    p->tprog_us <= 0 || p->ch_mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
-	    p->flush_us < 0 || p->floor_us < 0 ||
+	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -571,10 +602,13 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
 	m->cmd_ns = (__u64)(p->cmd_us * 1e3);
 	m->iface_ns = (__u64)(p->iface_us * 1e3);
 	m->flush_ns = (__u64)(p->flush_us * 1e3);
+	m->susp_ns = (__u64)(p->susp_us * 1e3);
 	m->floor_ns = (__u64)(p->floor_us * 1e3);
 	m->unit_ns = xfer_ns(p->ch_mbps, m->page_bytes) +
 		(__u64)(p->tprog_us * 1e3);
 	m->die_free = calloc(p->dies, sizeof(*m->die_free));
+	m->prog_end = calloc(p->dies, sizeof(*m->prog_end));
+	m->read_end = calloc(p->dies, sizeof(*m->read_end));
 	m->cap_link = 2 * depth;
 	m->link = calloc(m->cap_link, sizeof(*m->link));
 	m->cap_pg = 1024;
@@ -584,8 +618,8 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
 	m->held = calloc(depth, sizeof(*m->held));
 	m->spare = calloc(depth, sizeof(*m->spare));
 	m->nflush = calloc(depth, sizeof(*m->nflush));
-	assert(m->die_free && m->link && m->pg && m->heap && m->wait &&
-	       m->held && m->spare && m->nflush);
+	assert(m->die_free && m->prog_end && m->read_end && m->link && m->pg &&
+	       m->heap && m->wait && m->held && m->spare && m->nflush);
 	m->sflush_tag = -1;
 	return m;
 }
@@ -595,6 +629,8 @@ void ssd_model_free(struct ssd_model *m)
 	if (!m)
 		return;
 	free(m->die_free);
+	free(m->prog_end);
+	free(m->read_end);
 	free(m->link);
 	free(m->pg);
 	free(m->heap);
@@ -629,7 +665,7 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		"program_units %.1f\nbuffer_full_waits %llu\n"
 		"blocked_by_flush %llu\nblocked_ms_sum %.3f\n"
 		"read_die_waits %llu\nread_die_wait_ms_sum %.3f\n"
-		"buffer_mb %.3f\n",
+		"read_suspends %llu\nbuffer_mb %.3f\n",
 		(unsigned long long)m->n_read, (unsigned long long)m->n_write,
 		(unsigned long long)m->n_flush, m->flush_ns_sum / 1e6,
 		m->flush_ns_max / 1e6, m->seq_bytes / 1048576.0,
@@ -637,5 +673,5 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		(unsigned long long)m->n_buf_full,
 		(unsigned long long)m->n_blocked, m->blocked_ns_sum / 1e6,
 		(unsigned long long)m->n_read_wait, m->read_wait_ns_sum / 1e6,
-		m->buf_bytes / 1048576.0);
+		(unsigned long long)m->n_read_susp, m->buf_bytes / 1048576.0);
 }

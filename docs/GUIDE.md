@@ -258,6 +258,7 @@ free with power-loss protection, milliseconds without it.
 | `buffer_full_waits` | writes that waited for buffer space |
 | `blocked_by_flush`, `blocked_ms_sum` | requests held back by a SATA flush |
 | `read_die_waits`, `read_die_wait_ms_sum` | reads that found their die busy (another read or a program) |
+| `read_suspends` | reads that suspended a program (`susp_us` > 0) |
 | `buffer_mb` | data in the write buffer right now |
 
 **Calibrate:**
@@ -291,6 +292,8 @@ to `bench/expect/<profile>.tsv`.
 
 Limits: a first-order model. No garbage collection as a process (the
 `waf` factor charges it to the writes that cause it, at steady state),
-no SLC cache, no program suspend (a read behind a program waits for it),
+no SLC cache, program suspend only with `--susp_us` (0 in the profiles:
+a read behind a program waits for it) and with no limit on suspends per
+program,
 no reads from the write buffer, one model thread (~190K 4K IOPS and
 ~4 GB/s on a current server, below NVMe drives' peak).

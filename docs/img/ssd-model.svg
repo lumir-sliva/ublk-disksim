@@ -54,7 +54,7 @@
 <text x="545" y="277" font-size="10.5" fill="#333">         + one page over the channel</text>
 <text x="545" y="297" font-size="10.5" fill="#333">a read goes to die (page number mod dies) and</text>
 <text x="545" y="312" font-size="10.5" fill="#333">waits for whatever that die is doing, a program</text>
-<text x="545" y="327" font-size="10.5" fill="#333">included: no program suspend, no reads served</text>
+<text x="545" y="327" font-size="10.5" fill="#333">included (unless --susp_us), no reads served</text>
 <text x="545" y="342" font-size="10.5" fill="#333">from the buffer; die time is the parallelism</text>
 <text x="545" y="357" font-size="10.5" fill="#333">(sequential write = dies × page / program unit)</text>
 <polyline points="455,125 528,125" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#ar)"/>
