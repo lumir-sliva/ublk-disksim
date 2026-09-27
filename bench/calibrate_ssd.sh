@@ -14,7 +14,8 @@
 # /dev/ublkb<ID>, runs the fio jobs below one at a time, prints one
 # summary line per job and tears everything down. Queue depth is 128 if
 # the options mention nvme, else 32 (override with DEPTH). Results (fio
-# json, results.tsv, model stats) go to $OUT. With only --profile <p>, the
+# json+ with the full latency histograms, results.tsv, model stats) go to
+# $OUT. With only --profile <p>, the
 # run ends with bench/check.py against bench/expect/<p>.tsv and exits
 # non-zero if a number is out of tolerance (EXPECT=<name> picks another
 # expectation file, EXPECT=none skips the check).
@@ -34,6 +35,7 @@ ID=${ID:-12}
 OUT=${OUT:-/tmp/ublk-disksim-cal-ssd-$(date +%s)}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 REAL=${REAL:-}
+SKIP=0     # offset of every fio job
 case " $* $REAL " in *nvme*|*micron-7300*) DEPTH=${DEPTH:-128} ;; *) DEPTH=${DEPTH:-32} ;; esac
 mkdir -p "$OUT"
 
@@ -58,8 +60,11 @@ if [ -n "$REAL" ]; then
         exit 1
     fi
     lsblk -s -o NAME,SIZE,MODEL,SERIAL "$DEV" | tee "$OUT/device.txt"
-    fio --name=fill --filename="$DEV" --rw=write --bs=1M --size=4G --direct=1 \
-        --ioengine=libaio --iodepth=32 --output=/dev/null
+    # the jobs start 1 MiB in: random data at sector 0 can pass for a
+    # partition table (the kernel's Atari parser checks almost nothing)
+    SKIP=1M
+    fio --name=fill --filename="$DEV" --offset=$SKIP --rw=write --bs=1M \
+        --size=4G --direct=1 --ioengine=libaio --iodepth=32 --output=/dev/null
 else
     CFG=/sys/kernel/config/nullb/ublkssd$ID
     BACK=/dev/ublkssd$ID    # null_blk configfs devices are named after the dir
@@ -126,9 +131,9 @@ summary() {  # fio json, label
 
 run() {  # name, fio args...
     local name=$1; shift
-    fio --filename="$DEV" --direct=1 --ioengine=io_uring \
+    fio --filename="$DEV" --offset=$SKIP --direct=1 --ioengine=io_uring \
         --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-        --output-format=json --output="$OUT/$name.json" --name="$name" "$@"
+        --lat_percentiles=1 --output-format=json+ --output="$OUT/$name.json" --name="$name" "$@"
     summary "$OUT/$name.json" "$name"
 }
 
@@ -151,9 +156,9 @@ echo "flushes during fsync jobs: $nf"
 printf 'fsync-jobs\t-\t-\tdevice_flushes\t%s\n' "$nf" >> "$OUT/results.tsv"
 
 # a reader next to a writer that fsyncs every write
-fio --filename="$DEV" --direct=1 --ioengine=io_uring \
+fio --filename="$DEV" --offset=$SKIP --direct=1 --ioengine=io_uring \
     --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-    --output-format=json --output="$OUT/blocking.json" \
+    --lat_percentiles=1 --output-format=json+ --output="$OUT/blocking.json" \
     --name=reader --rw=randread --bs=4k --iodepth=1 \
     --name=writer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 >/dev/null
 summary "$OUT/blocking.json" blocking
@@ -162,8 +167,8 @@ summary "$OUT/blocking.json" blocking
 # fsyncs every write, on separate halves of the device
 fio --filename="$DEV" --direct=1 --ioengine=io_uring \
     --time_based --runtime="$RT" --randrepeat=0 \
-    --output-format=json --output="$OUT/full-fsync.json" \
-    --name=bulk --rw=randwrite --bs=4k --iodepth=16 --offset=0 --size=2G \
+    --lat_percentiles=1 --output-format=json+ --output="$OUT/full-fsync.json" \
+    --name=bulk --rw=randwrite --bs=4k --iodepth=16 --offset=$SKIP --size=2G \
     --name=fsyncer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 \
     --offset=2G --size=2G >/dev/null
 summary "$OUT/full-fsync.json" full-fsync

@@ -6,8 +6,9 @@
 # Creates a memory-backed null_blk (4 GiB, configfs name ublksim<ID>) as
 # the backing store, starts `kublk add -t hdd` on it as /dev/ublkb<ID>,
 # runs the fio jobs below one at a time and prints one summary line per
-# job, then tears everything down. Results (fio json, results.tsv, model
-# stats) go to $OUT. With a stock profile (none given = hgst-7k8), alone
+# job, then tears everything down. Results (fio json+ with the full
+# latency histograms, results.tsv, model stats) go to $OUT. With a
+# stock profile (none given = hgst-7k8), alone
 # or with --cache_mb 0, the run ends with bench/check.py against
 # bench/expect/<profile>[-wt].tsv and exits non-zero if a number is out of
 # tolerance (EXPECT=<name> picks another expectation file, EXPECT=none
@@ -60,7 +61,7 @@ run() {  # name, fio args...
     local name=$1; shift
     fio --filename="$DEV" --direct=1 --ioengine=libaio \
         --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-        --output-format=json --output="$OUT/$name.json" --name="$name" "$@"
+        --lat_percentiles=1 --output-format=json+ --output="$OUT/$name.json" --name="$name" "$@"
     summary "$OUT/$name.json" "$name"
 }
 
@@ -68,6 +69,10 @@ run() {  # name, fio args...
 flushes() { awk '{print $16}' "/sys/block/ublkb$ID/stat"; }
 
 run randread-qd1    --rw=randread --bs=4k --iodepth=1
+# how much queueing buys: the reordering curve
+for qd in 2 4 8 16; do
+    run randread-qd$qd --rw=randread --bs=4k --iodepth=$qd
+done
 run randread-qd32   --rw=randread --bs=4k --iodepth=32
 run seqread-1m      --rw=read --bs=1M --iodepth=1
 run seqwrite-1m-qd1 --rw=write --bs=1M --iodepth=1
@@ -98,7 +103,7 @@ printf 'write-jobs\t-\t-\tdevice_flushes\t%s\n' "$nf" >> "$OUT/results.tsv"
 # a reader next to a writer that fsyncs every write
 fio --filename="$DEV" --direct=1 --ioengine=libaio \
     --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-    --output-format=json --output="$OUT/blocking.json" \
+    --lat_percentiles=1 --output-format=json+ --output="$OUT/blocking.json" \
     --name=reader --rw=randread --bs=4k --iodepth=1 \
     --name=writer --rw=randwrite --bs=4k --iodepth=1 --fsync=1 >/dev/null
 summary "$OUT/blocking.json" blocking
@@ -107,7 +112,7 @@ summary "$OUT/blocking.json" blocking
 # cache still get written back, or does it fill and stall the writer?
 fio --filename="$DEV" --direct=1 --ioengine=libaio \
     --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-    --output-format=json --output="$OUT/read-vs-cache.json" \
+    --lat_percentiles=1 --output-format=json+ --output="$OUT/read-vs-cache.json" \
     --name=reader --rw=randread --bs=4k --iodepth=4 \
     --name=writer --rw=randwrite --bs=4k --iodepth=1 >/dev/null
 summary "$OUT/read-vs-cache.json" read-vs-cache
@@ -117,7 +122,7 @@ timed_flush read-vs-cache
 # write-back of a long run of cached data?
 fio --filename="$DEV" --direct=1 --ioengine=libaio \
     --time_based --runtime="$RT" --size=4G --randrepeat=0 \
-    --output-format=json --output="$OUT/read-vs-seq.json" \
+    --lat_percentiles=1 --output-format=json+ --output="$OUT/read-vs-seq.json" \
     --name=reader --rw=randread --bs=4k --iodepth=1 \
     --name=writer --rw=write --bs=1M --iodepth=4 >/dev/null
 summary "$OUT/read-vs-seq.json" read-vs-seq
