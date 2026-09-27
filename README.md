@@ -10,11 +10,15 @@ decides *when* each request completes. So a filesystem or database on top
 behaves functionally like on RAM, but sees the latency, throughput and
 queueing of the modelled disk.
 
+![How it works](docs/img/architecture.svg)
+
 ## Targets
 
 ### `hdd`: single-actuator hard disk
 
 What it models (see the header of `hdd_model.c`):
+
+![Inside the hdd model](docs/img/hdd-model.svg)
 
 - one actuator: requests are served one at a time,
   shortest-positioning-time-first among the oldest `ncq` waiting ones
