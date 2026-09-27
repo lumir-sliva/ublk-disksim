@@ -175,7 +175,7 @@ def draw_score(plt, table, out):
     from matplotlib.transforms import blended_transform_factory as blend
     rows = rows_of(table)
     # models first, then the real drive judged by its own datasheet
-    is_real = lambda g: "model" not in g
+    is_real = lambda g: "real" in g
     groups = sorted(dict.fromkeys(r[0] for r in rows), key=is_real)
     lim = 60                                  # % deviation shown
     h = 0.31 * len(rows) + 0.72 * len(groups) + 1.9
@@ -299,6 +299,8 @@ def draw_lat(plt, table, out, title, sub, panels_meta):
         allv, xmax, model = [], 0, ""
         for lab in dict.fromkeys(r[1] for r in rows if r[0] == p):
             pts, _ = pct_series(rows, p, lab)
+            if not pts:     # too few samples for any percentile shown
+                continue
             real = "real" in lab
             if not real:
                 model = lab
@@ -641,6 +643,121 @@ def draw_integrity(plt, table, out):
              "the check can fail.")
     save(plt, fig, out)
 
+def ssd_profiles(src):
+    """Profile name -> parameters, read from the profiles[] table of ssd_model.c."""
+    import re
+    text = open(src, encoding="utf-8").read()
+    table = text[text.index("} profiles[] = {"):]
+    out = {}
+    for name, body in re.findall(r'\{\s*"([\w-]+)",\s*\{(.*?)\}\s*\}', table, re.S):
+        out[name] = {k: float(v) for k, v in
+                     re.findall(r"\.(\w+)\s*=\s*([0-9.eE+-]+)", body)}
+    return out
+
+
+def draw_ssd_request(plt, src, out):
+    """Where a 4K read and write spend their time, per ssd profile."""
+    profs = ssd_profiles(src)
+    spec = {"sata-plp": (120, 40), "nvme-plp": (80, 14.3), "sata-consumer": (77, None),
+            "micron-7300": (90, 25)}
+    drive = {"sata-plp": "Samsung PM883", "nvme-plp": "Samsung PM9A3",
+             "sata-consumer": "Samsung 870 EVO", "micron-7300": "Micron 7300 PRO"}
+    x4k = lambda mbps: 4096 / mbps       # µs for 4 KiB at MB/s
+    parts = [("command", "#9aa5ad"), ("page read on the die", "#2b8a3e"),
+             ("die → controller", "#74b886"), ("host link", MODEL2),
+             ("controller", MODEL)]
+    names = [n for n in profs if n in spec]
+    fig = plt.figure(figsize=(10.5, 2.3 + 1.05 * len(names)))
+    H = fig.get_figheight()
+    axes = [fig.add_axes([0.2, 0.55 / H, 0.44, 1 - 2.2 / H]),
+            fig.add_axes([0.72, 0.55 / H, 0.25, 1 - 2.2 / H])]
+    for i, n in enumerate(names):
+        p = profs[n]
+        read = [p.get("cmd_us", 0), p["tr_us"], x4k(p["ch_mbps"]),
+                x4k(p["iface_mbps"]), p["iface_us"]]
+        write = [p.get("cmd_us", 0), 0, 0, x4k(p["iface_mbps"]), p["iface_us"]]
+        for ax, seg, ref in ((axes[0], read, spec[n][0]), (axes[1], write, spec[n][1])):
+            x = 0
+            for (lab, c), w in zip(parts, seg):
+                if w > 0:
+                    ax.barh(-i, w, left=x, height=0.55, color=c, lw=0,
+                            label=lab if i == 0 else None)
+                x += w
+            ax.text(x + 2, -i, f"{x:.0f} µs", va="center", fontsize=10,
+                    fontweight="bold")
+            if ref:
+                ax.plot((ref, ref), (-i - 0.38, -i + 0.38), color=REAL, lw=2.2)
+        iface = "NVMe" if p.get("nvme") else "SATA"
+        axes[0].text(-0.03, -i + 0.1, n, transform=axes[0].get_yaxis_transform(),
+                     ha="right", va="bottom", fontsize=10.5, fontweight="bold")
+        axes[0].text(-0.03, -i - 0.05, f"{drive[n]}, {iface}",
+                     transform=axes[0].get_yaxis_transform(), ha="right", va="top",
+                     fontsize=9, color=SOFT)
+    for ax, t, lim in ((axes[0], "4K read, one at a time", 160),
+                       (axes[1], "4K write (into the buffer)", 60)):
+        ax.set_xlim(0, lim)
+        ax.set_axisbelow(True)
+        ax.set_ylim(-len(names) + 0.45, 0.6)
+        ax.set_yticks([])
+        ax.grid(axis="y", visible=False)
+        ax.set_xlabel("µs", fontsize=9.5)
+        ax.text(0, 1.03, t, transform=ax.transAxes, fontsize=11, fontweight="bold",
+                va="bottom")
+    from matplotlib.lines import Line2D
+    h, l = axes[0].get_legend_handles_labels()
+    h.append(Line2D([], [], color=REAL, lw=2.2))
+    l.append("fitted to")
+    fig.legend(h, l, loc="upper left", ncol=6, fontsize=9,
+               bbox_to_anchor=(0.2, 1 - 1.0 / H), handlelength=1.2, columnspacing=1.2)
+    headline(fig, "Where a 4K request's time goes in the ssd model",
+             "Sums of the profile parameters (ssd_model.c), the same sums make "
+             "check asserts; red: what each was fitted to\n"
+             "(datasheets; the PM9A3 write: a published measurement). A host can't "
+             "show less than its floor (~16–35 µs per request).")
+    save(plt, fig, out)
+
+
+def draw_fsync(plt, table, out):
+    rows = [r for r in rows_of(table)]
+    rows.sort(key=lambda r: -float(r[2]))
+    fig = plt.figure(figsize=(10.5, 1.9 + 0.5 * len(rows)))
+    H = fig.get_figheight()
+    ax = fig.add_axes([0.3, 0.55 / H, 0.44, 1 - 1.75 / H])
+    for i, (lab, cls, rate, note) in enumerate(rows):
+        us = 1e6 / float(rate)
+        real = "real" in lab
+        ax.barh(-i, us, height=0.62, color=REAL if real else MODEL,
+                alpha=1 if real else 0.85, lw=0, hatch=None)
+        ax.text(us * 1.12, -i, f"{lat_ms(us)}  ({float(rate):,.0f}/s)", va="center",
+                fontsize=9.5, fontweight="bold", color=REAL if real else MODEL)
+        ax.text(-0.02, -i + 0.05, lab.replace(" (real)", ""), transform=ax.get_yaxis_transform(),
+                ha="right", va="bottom", fontsize=10, fontweight="bold",
+                color=REAL if real else INK)
+        ax.text(-0.02, -i - 0.02, cls, transform=ax.get_yaxis_transform(),
+                ha="right", va="top", fontsize=8.5, color=SOFT)
+        ax.text(1.02, -i, note, transform=ax.get_yaxis_transform(), va="center",
+                fontsize=8, color=SOFT, wrap=False)
+    from matplotlib.ticker import FixedLocator, NullLocator
+    ax.set_axisbelow(True)
+    ax.set_xscale("log")
+    ax.set_xlim(10, 3e5)
+    ticks = [10, 100, 1e3, 1e4, 1e5]
+    ax.xaxis.set_major_locator(FixedLocator(ticks))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.set_xticklabels([lat_ms(t) for t in ticks])
+    ax.set_yticks([])
+    ax.set_ylim(-len(rows) + 0.4, 0.6)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("time per 4K write + fsync at QD1 (orange: real drive, blue: model)",
+                  fontsize=9.5)
+    headline(fig, "What one fsync costs: tens of µs with power-loss protection, ms without",
+             "4K random write + fsync, one at a time. A drive with PLP can "
+             "acknowledge from its buffer; without, it programs flash (SSD) or\n"
+             "writes back to the platter (HDD) first. Models and the Micron on a "
+             "second host; KC3000, 850 EVO, ST2000DM006 through NTFS.")
+    save(plt, fig, out)
+
+
 PANELS = {
     "micron-read": ("Micron 7300 PRO (NVMe)", "4K random read, QD1"),
     "micron-mixed": ("Micron 7300 PRO (NVMe)", "4K read next to a writer that fsyncs"),
@@ -661,6 +778,11 @@ def cmd_draw(data="docs/img/data", img="docs/img"):
         draw_lateness(plt, t, os.path.join(img, "lateness.svg"))
     if os.path.exists(f("integrity.tsv")):
         draw_integrity(plt, f("integrity.tsv"), os.path.join(img, "integrity.svg"))
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ssd_model.c")
+    if os.path.exists(src):
+        draw_ssd_request(plt, src, os.path.join(img, "ssd-request.svg"))
+    if os.path.exists(f("fsync.tsv")):
+        draw_fsync(plt, f("fsync.tsv"), os.path.join(img, "fsync-cost.svg"))
     if os.path.exists(f("score.tsv")):
         draw_score(plt, f("score.tsv"), os.path.join(img, "scorecard.svg"))
     if os.path.exists(f("latency.tsv")):

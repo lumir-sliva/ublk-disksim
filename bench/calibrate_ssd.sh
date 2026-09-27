@@ -25,7 +25,7 @@
 #   sudo REAL=/dev/nvme0n1p1 bench/calibrate_ssd.sh 30 --profile micron-7300
 # The options then only pick the expectations. It WRITES to the first
 # 4 GiB of the device (filled with 1M writes first, so reads hit mapped
-# data). It refuses a device smaller than 4 GiB, one with a filesystem
+# data). It refuses a device smaller than 4 GiB + 1 MiB, one with a filesystem
 # signature or partitions, and any partition of a drive that has
 # something mounted or held (a system disk's boot partitions included).
 set -euo pipefail
@@ -46,10 +46,10 @@ if [ -n "$REAL" ]; then
     DISK=$(lsblk -ndo PKNAME "$DEV")
     DISK=/dev/${DISK:-$NAME}
     held=
-    for n in $(lsblk -nro NAME "$DISK"); do
+    for n in $(lsblk -nro KNAME "$DISK"); do
         held=$held$(ls "/sys/class/block/$n/holders")
     done
-    if [ "$(blockdev --getsize64 "$DEV")" -lt $((4 << 30)) ] ||
+    if [ "$(blockdev --getsize64 "$DEV")" -lt $(((4 << 30) + (1 << 20))) ] ||
        [ -n "$(blkid -p -o value -s TYPE "$DEV" || true)" ] ||
        [ "$(lsblk -nr "$DEV" | wc -l)" -gt 1 ] ||
        [ -n "$(lsblk -nro MOUNTPOINT "$DISK" | tr -d '\n')" ] ||
@@ -126,7 +126,8 @@ echo "device $DEV: depth $DEPTH rotational $(cat "$SYS/queue/rotational")" \
      "write_cache '$(cat "$SYS/queue/write_cache")'"
 
 summary() {  # fio json, label
-    python3 "$HERE/bench/summary.py" "$1" "$2" us "$OUT/results.tsv"
+    python3 "$HERE/bench/summary.py" "$1" "$2" us "$OUT/results.tsv" \
+        "$(cat "$SYS/queue/write_cache")"
 }
 
 run() {  # name, fio args...
@@ -196,5 +197,5 @@ elif [ "$expect" = none ] || [ ! -f "$HERE/bench/expect/$expect.tsv" ]; then
     echo "check: skipped (no expectations for these parameters; EXPECT=<name> to force)"
 else
     python3 "$HERE/bench/check.py" "$OUT/results.tsv" \
-        "$HERE/bench/expect/$expect.tsv" $STATS
+        "$HERE/bench/expect/$expect.tsv" ${STATS:+"$STATS"}
 fi

@@ -54,7 +54,8 @@ fio --name=fill --filename="$DEV" --rw=write --bs=1M --size=1G --direct=1 \
     --ioengine=libaio --iodepth=4 --output=/dev/null
 
 summary() {  # fio json, label
-    python3 "$HERE/bench/summary.py" "$1" "$2" ms "$OUT/results.tsv"
+    python3 "$HERE/bench/summary.py" "$1" "$2" ms "$OUT/results.tsv" \
+        "$(cat "/sys/block/ublkb$ID/queue/write_cache")"
 }
 
 run() {  # name, fio args...

@@ -2,7 +2,9 @@
 # One line per fio job and direction for the calibration scripts, and the
 # same numbers appended to a results file for bench/check.py.
 #
-# usage: summary.py <fio json> <label> <ms|us> <results.tsv>
+# usage: summary.py <fio json> <label> <ms|us> <results.tsv> [write cache]
+#   write cache: the device's queue/write_cache ("write back" or
+#   "write through"), which tells whether an fsync reaches the device
 #
 # results.tsv lines: label <TAB> job <TAB> rw <TAB> metric <TAB> value, with
 # metrics iops, mbps, lat_mean_us, lat_p50_us, lat_p99_us, fsync_mean_us.
@@ -12,6 +14,7 @@ import json
 import sys
 
 path, label, unit, results = sys.argv[1:5]
+write_back = len(sys.argv) > 5 and sys.argv[5] == "write back"
 scale = 1e6 if unit == "ms" else 1e3
 d = json.load(open(path))
 with open(results, "a") as out:
@@ -36,9 +39,11 @@ with open(results, "a") as out:
         if sy.get("N"):
             mean = sy["mean"]
             w, n = j["write"], int(j["job options"].get("fsync", 0))
-            if mean < 1000 and n and w["iops"]:
+            if write_back and mean < 1000 and n and w["iops"]:
                 # Some fio builds (3.28 with libaio; Windows) report ~0.3 us
-                # for fsync, no real flush is that fast. At QD1 the job
+                # for fsync. A flush to a write-back cache can't be that
+                # fast (without one the kernel sends none, and ~0.3 us is
+                # right). At QD1 the job
                 # alternates n writes and an fsync, so the fsync takes
                 # what the writes leave of each cycle.
                 mean = n * (1e9 / w["iops"] - w["lat_ns"]["mean"])

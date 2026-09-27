@@ -153,7 +153,7 @@ sudo bench/calibrate.sh 30 --cache_mb 0          # same, cache off
 sudo ID=11 OUT=/tmp/cal bench/calibrate.sh 60 --seek_avg_ms 8.5
 ```
 
-Jobs: 4K random read at QD1 and QD32, 1M sequential read, 1M sequential
+Jobs: 4K random read at QD1, 2, 4, 8, 16 and 32, 1M sequential read, 1M sequential
 write at QD1 and QD4, 4K random write without and with an fsync per
 write, one flush of whatever the random writes left in the cache, a
 reader next to a flushing writer, readers at QD4 next to a cached writer

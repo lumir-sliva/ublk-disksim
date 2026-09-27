@@ -40,10 +40,10 @@ hgst-7k8 model, write cache off	randwrite-qd1	randwrite-qd1	write	lat_mean_us	~	
 hgst-7k8 model, write cache off	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	78	0.1	77.948
 hgst-7k8 model, write cache off	seqwrite-1m-qd4	seqwrite-1m-qd4	write	mbps	~	205	0.1	204.664
 hgst-7k8 model, write cache off	read-vs-seq	reader	read	lat_p99_us	<=	600000	0	522190.848
-barracuda-2t model (a real Seagate ST2000DM006)	randread-qd1	randread-qd1	read	lat_mean_us	~	17500	0.1	17381.753
-barracuda-2t model (a real Seagate ST2000DM006)	randread-qd32	randread-qd32	read	iops	~	94	0.25	83.446
-barracuda-2t model (a real Seagate ST2000DM006)	seqread-1m	seqread-1m	read	mbps	~	143	0.15	145.777
-barracuda-2t model (a real Seagate ST2000DM006)	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	132	0.15	149.861
-barracuda-2t model (a real Seagate ST2000DM006)	randwrite-qd1	randwrite-qd1	write	iops	~	124	0.25	108.549
-barracuda-2t model (a real Seagate ST2000DM006)	randwrite-fsync8	randwrite-fsync8	sync	fsync_mean_us	~	100000	0.3	103183.217
-barracuda-2t model (a real Seagate ST2000DM006)	randwrite-fsync64	randwrite-fsync64	sync	fsync_mean_us	~	600000	0.2	655122.038
+barracuda-2t model (fitted to a Seagate ST2000DM006)	randread-qd1	randread-qd1	read	lat_mean_us	~	17500	0.1	17381.753
+barracuda-2t model (fitted to a Seagate ST2000DM006)	randread-qd32	randread-qd32	read	iops	~	94	0.25	83.446
+barracuda-2t model (fitted to a Seagate ST2000DM006)	seqread-1m	seqread-1m	read	mbps	~	143	0.15	145.777
+barracuda-2t model (fitted to a Seagate ST2000DM006)	seqwrite-1m-qd1	seqwrite-1m-qd1	write	mbps	~	132	0.15	149.861
+barracuda-2t model (fitted to a Seagate ST2000DM006)	randwrite-qd1	randwrite-qd1	write	iops	~	124	0.25	108.549
+barracuda-2t model (fitted to a Seagate ST2000DM006)	randwrite-fsync8	randwrite-fsync8	sync	fsync_mean_us	~	100000	0.3	103183.217
+barracuda-2t model (fitted to a Seagate ST2000DM006)	randwrite-fsync64	randwrite-fsync64	sync	fsync_mean_us	~	600000	0.2	655122.038

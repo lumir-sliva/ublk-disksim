@@ -1436,7 +1436,7 @@ z
     <text style="font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #5f6b73" x="638.82" y="1215.624145" transform="rotate(-0 638.82 1215.624145)">≤ 600 ms</text>
    </g>
    <g id="text_126">
-    <text style="font-weight: 700; font-size: 11px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="9.072" y="1252.370452" transform="rotate(-0 9.072 1252.370452)">barracuda-2t model (a real Seagate ST2000DM006)</text>
+    <text style="font-weight: 700; font-size: 11px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="9.072" y="1252.370452" transform="rotate(-0 9.072 1252.370452)">barracuda-2t model (fitted to a Seagate ST2000DM006)</text>
    </g>
    <g id="line2d_106">
     <path d="M 387.892657 1273.429565 
