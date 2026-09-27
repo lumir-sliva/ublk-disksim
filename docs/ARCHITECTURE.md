@@ -158,14 +158,21 @@ Dies, a host link, a write buffer.
 - **Dies:** each has its own timeline. A read of a page (die = page
   number mod `dies`) occupies its die for `tr_us` plus the transfer on
   the flash channel, after whatever the die is already doing, a program
-  included. With `susp_us` > 0 a read that finds its die programming
-  (no read queued behind the program) starts `susp_us` later, at the
-  program's next suspend point; reads arriving while it is suspended
-  queue behind it without another `susp_us`. The program resumes after
-  the reads: the die's program work ends later by their die time, not by
-  `susp_us` (the program ran on until the suspend point). Flushes without
-  PLP wait for the resumed program; buffer space is freed at the page's
-  unsuspended end.
+  included. With `tr_step_us` > 0 each 4K of the address space sits on
+  one of the three TLC page types (lower, middle, upper; by a hash of
+  its address, a third each), sensed with 1, 2 or 4 read levels:
+  `tr_us`, + `tr_step_us`, + 3 × `tr_step_us`; a read takes its slowest
+  4K. With `susp_us` > 0 a read that finds its die programming (no read
+  queued behind the program) starts `susp_us` later, at the program's
+  next suspend point; reads arriving while it is suspended queue behind
+  it without another `susp_us`. A program still receiving its page over
+  the channel (the first page / `ch_mbps` of a unit, scaled for a
+  fractional one) hasn't started and can't be suspended: a read arriving
+  then, and any read queued behind that one, waits for all of it. The
+  program resumes after the reads: the die's program work ends later by
+  their die time, not by `susp_us` (the program ran on until the suspend
+  point). Flushes without PLP wait for the resumed program; buffer space
+  is freed at the page's unsuspended end.
   Channels are not a separate resource: their total rate is above the
   host link on the modelled drives.
 - **Host link:** a list of busy intervals. Each command takes the

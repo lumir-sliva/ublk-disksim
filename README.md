@@ -140,9 +140,14 @@ What it models (see the header of `ssd_model.c`):
 
 - flash dies with their own timelines: a page read takes `tr_us` on its
   die (die = page number mod `dies`) plus the channel transfer, and waits
-  for whatever that die is doing, a program included. With `--susp_us`
-  a read that finds its die programming waits only that long (the
-  program's next suspend point); the program resumes after the read;
+  for whatever that die is doing, a program included. With
+  `--tr_step_us` reads depend on the TLC page type their 4K sits on
+  (fixed per address, a third each): `tr_us`, + one step, + three steps
+  (1, 2 and 4 read levels). With `--susp_us` a read that finds its die
+  programming waits only that long (the program's next suspend point),
+  once the page has reached the die (before that, it and the reads
+  behind it wait for the whole program); the program resumes after the
+  read;
 - a host link (`iface_mbps`, plus `cmd_us` of link time per command; on
   SATA that command rate caps 4K random reads near 100K IOPS, the NVMe
   profile sets it to 0) and a controller latency `iface_us` per command;
@@ -174,6 +179,7 @@ the write buffer, mapping table misses, TRIM, multiple NVMe queues.
 | `--dies` | flash dies | 32 | 64 | 16 | 64 |
 | `--page_kb` | program unit | 16 | 16 | 16 | 16 |
 | `--tr_us` | page read, incl. ECC and lookup | 75 | 62 | 46 | 60 |
+| `--tr_step_us` | per extra TLC read level (0: all pages read in `tr_us`) | 0 | 0 | 0 | 0 |
 | `--ch_mbps` | flash channel rate | 800 | 1200 | 1200 | 800 |
 | `--tprog_us` | page program | 700 | 400 | 390 | 656 |
 | `--waf` | program units per page of random writes | 7.3 | 4.9 | 13.7 | 5.0 |

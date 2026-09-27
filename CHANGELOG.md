@@ -6,6 +6,14 @@ when you report one.
 
 ## Unreleased
 
+- **ssd `--tr_step_us X`: TLC page types.** Each 4K reads in `tr_us`,
+  `tr_us + X` or `tr_us + 3X` (1, 2, 4 read levels), fixed per address,
+  a third each. **Program suspend waits for the page to reach the
+  die:** with `--susp_us`, a read arriving while the program's page is
+  still crossing the channel (and the reads behind it) wait for the
+  whole program; `--susp_us` results from the previous change move.
+  0, the default of both and every profile's value, keeps the old
+  behaviour.
 - **ssd `--susp_us X`: program suspend.** A read that finds its die
   programming waits `X` µs (the program's next suspend point) instead
   of the rest of the program; the program resumes after the read. 0,

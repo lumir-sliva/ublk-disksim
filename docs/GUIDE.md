@@ -258,7 +258,7 @@ free with power-loss protection, milliseconds without it.
 | `buffer_full_waits` | writes that waited for buffer space |
 | `blocked_by_flush`, `blocked_ms_sum` | requests held back by a SATA flush |
 | `read_die_waits`, `read_die_wait_ms_sum` | reads that found their die busy (another read or a program) |
-| `read_suspends` | reads that suspended a program (`susp_us` > 0) |
+| `read_suspends` | page reads served inside a program suspension (`susp_us` > 0) |
 | `buffer_mb` | data in the write buffer right now |
 
 **Calibrate:**
@@ -284,7 +284,11 @@ To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
 write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the
 QD32 random read IOPS, `dies` · page / (`tprog_us` + page / `ch_mbps`)
 to the sequential write rate, and `waf` to the steady-state (full drive) random write
-IOPS. `flush_us` comes from a measured 4K write + fsync at QD1, which
+IOPS. With the drive at hand, a QD1 random read with fio's per-I/O log
+(`--write_lat_log`, `--log_offset=1`) shows whether its reads have page
+type modes: on TLC three, a third each, spaced 1 : 3 steps
+(`tr_step_us`, with `tr_us` the fastest). `flush_us` comes from a
+measured 4K write + fsync at QD1, which
 Ceph users publish for many drives. Start from the nearest `--profile`
 and override what differs (kublk takes at most 15 target options), then
 add a profile to `profiles[]` in `ssd_model.c` and its expected values
@@ -294,6 +298,5 @@ Limits: a first-order model. No garbage collection as a process (the
 `waf` factor charges it to the writes that cause it, at steady state),
 no SLC cache, program suspend only with `--susp_us` (0 in the profiles:
 a read behind a program waits for it) and with no limit on suspends per
-program,
-no reads from the write buffer, one model thread (~190K 4K IOPS and
+program, no reads from the write buffer, one model thread (~190K 4K IOPS and
 ~4 GB/s on a current server, below NVMe drives' peak).

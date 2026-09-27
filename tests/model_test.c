@@ -1047,6 +1047,114 @@ static void ssd_suspend(void)
 	      "= %.3f us", (s.rq[b].done_at - s.rq[b].sub) / 1e3, want / 1e3);
 	sim_drain(&s, s.now + SEC);
 	sim_free(&s);
+
+	cur_test = "ssd: a read while the page still goes to the die waits for the whole program";
+	p.ch_mbps = 100;	/* 16K takes 164 us to reach the die */
+	u = ssd_unit_ns(&p);
+	ssd_up(&s, &p, 128);
+	s0 = ssd_one_program(&s, &p);
+	lat = ssd_read_at(&s, s0 + 50 * US, 8 * 5000);
+	want = u - 50 * US + ssd_read_ns(&p);
+	CHECK(fabs(lat - want) < 5, "read %.3f us, rest of the program + read = %.3f us",
+	      lat / 1e3, want / 1e3);
+	cur_test = "ssd: once the page is on the die a read waits susp_us";
+	s0 = ssd_one_program(&s, &p);
+	lat = ssd_read_at(&s, s0 + xfer_ns_of(p.ch_mbps, p.page_kb << 10) + 10 * US,
+			  8 * 5000);
+	want = p.susp_us * 1e3 + ssd_read_ns(&p);
+	CHECK(fabs(lat - want) < 5, "read %.3f us, susp_us + read = %.3f us",
+	      lat / 1e3, want / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: a half unit receives half a page before it can be suspended";
+	p.waf = 1.5;		/* one random page: a whole unit, then half a unit */
+	for (int late = 0; late < 2; late++) {
+		double half_in = xfer_ns_of(p.ch_mbps, p.page_kb << 10) / 2;
+		__u64 s1;
+
+		ssd_up(&s, &p, 128);
+		s1 = ssd_one_program(&s, &p) + (__u64)u;	/* second unit */
+		lat = ssd_read_at(&s, s1 + (late ? 1.5 : 0.5) * half_in, 8 * 5000);
+		want = late ? p.susp_us * 1e3 + ssd_read_ns(&p) :
+			u / 2 - 0.5 * half_in + ssd_read_ns(&p);
+		CHECK(fabs(lat - want) < 5, "read %s the half page's transfer: %.3f us, "
+		      "expected %.3f us", late ? "after" : "during", lat / 1e3, want / 1e3);
+		sim_free(&s);
+	}
+}
+
+/* 4K read latency above the documented tr_us sum, ns */
+static double ssd_read_extra(struct sim *s, const struct ssd_params *p,
+			     __u64 lba, __u64 nr)
+{
+	double base = (p->tr_us + p->cmd_us + p->iface_us) * 1e3 +
+		xfer_ns_of(p->ch_mbps, nr << 9) + xfer_ns_of(p->iface_mbps, nr << 9);
+	int tag = sim_submit(s, MODEL_READ, lba, nr, NULL);
+	double lat = s->rq[tag].done_at - s->rq[tag].sub;
+
+	sim_drain(s, s->now + SEC);
+	s->now += MS;
+	return lat - base;
+}
+
+static void ssd_read_levels(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	double step, e, share[3] = { 0 };
+	struct sim s;
+	int i, k, bad = 0, moved = 0, n = 3000;
+	__u64 lba[100];
+	double first[100];
+
+	p.tr_step_us = 30;
+	step = p.tr_step_us * 1e3;
+	cur_test = "ssd: TLC 4K reads take tr_us + 0, 1 or 3 steps, a third each";
+	ssd_up(&s, &p, 128);
+	for (i = 0; i < n; i++) {
+		__u64 a = 8 * rnd_below(SSD_SECTORS / 8);
+
+		e = ssd_read_extra(&s, &p, a, 8);
+		for (k = 0; k < 3; k++)
+			if (fabs(e - (k == 2 ? 3 : k) * step) < 5)
+				break;
+		if (k == 3)
+			bad++;
+		else
+			share[k] += 1.0 / n;
+		if (i < 100) {
+			lba[i] = a;
+			first[i] = e;
+		}
+	}
+	CHECK(!bad, "%d of %d reads not tr_us + 0, 1 or 3 steps", bad, n);
+	for (k = 0; k < 3; k++)
+		CHECK(fabs(share[k] - 1.0 / 3) < 0.04, "page type %d: %.3f of the reads",
+		      k, share[k]);
+
+	cur_test = "ssd: a 4K read takes the same time every time";
+	for (i = 0; i < 100; i++)
+		if (fabs(ssd_read_extra(&s, &p, lba[i], 8) - first[i]) > 5)
+			moved++;
+	CHECK(!moved, "%d of 100 addresses read at another speed the second time",
+	      moved);
+
+	cur_test = "ssd: a 16K read takes its slowest 4K";
+	bad = 0;
+	for (i = 0; i < 200; i++) {
+		__u64 a = 32 * rnd_below(SSD_SECTORS / 32);
+		double most = 0, all;
+
+		for (k = 0; k < 4; k++) {
+			e = ssd_read_extra(&s, &p, a + 8 * k, 8);
+			if (e > most)
+				most = e;
+		}
+		all = ssd_read_extra(&s, &p, a, 32);
+		if (fabs(all - most) > 5)
+			bad++;
+	}
+	CHECK(!bad, "%d of 200 16K reads not as slow as their slowest 4K", bad);
+	sim_free(&s);
 }
 
 /* ---- randomized invariants --------------------------------------- */
@@ -1137,6 +1245,7 @@ static void ssd_random(int runs)
 		p.waf = 1 + rnd_below(5);
 		p.floor_us = rnd_below(2) ? 0 : 20;
 		p.susp_us = rnd_below(2) ? 0 : 20;
+		p.tr_step_us = rnd_below(2) ? 0 : 26;
 		p.cmd_us = p.nvme ? 0 : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
@@ -1163,6 +1272,7 @@ int main(int argc, char **argv)
 	ssd_rates();
 	ssd_flushes();
 	ssd_suspend();
+	ssd_read_levels();
 	hdd_random(runs);
 	ssd_random(runs);
 

@@ -1,6 +1,6 @@
 {
   "_about": "Recorded results of the validation runs described in docs/VALIDATION.md; bench/figures.py draws validation-overview.svg, mutation.svg and lateness.svg from them.",
-  "make_check": {"checks": 207207533, "failures": 0, "scenario_tests": 22, "randomized_runs": 200},
+  "make_check": {"checks": 241863257, "failures": 0, "scenario_tests": 23, "randomized_runs": 200},
   "mutants": [
     {"target": "hdd", "bug": "FLUSH completes before its last write-back ends", "caught_by": "flush timing check (scenario and randomized)"},
     {"target": "ssd", "bug": "SATA FLUSH without PLP doesn't wait for page programs", "caught_by": "flush cost lower bound; flush timing check"},

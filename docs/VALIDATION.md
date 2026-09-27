@@ -47,7 +47,8 @@ unit:
 | ssd | QD1 read, write | exactly the documented sums (`tr_us` + channel + `cmd_us` + link + `iface_us`) |
 | ssd | `floor_us` | subtracted exactly; never below arrival |
 | ssd | reads on different dies | overlap; on one die they queue (≥ n × `tr_us`) |
-| ssd | read on a programming die | `susp_us` 0: waits for the rest of the program; with `susp_us`: waits `susp_us`, or the rest of the program if shorter; a second read joins without another `susp_us`; the die's next program, and a flush without PLP, wait for the program's end pushed back by the read's die time |
+| ssd | read on a programming die | `susp_us` 0: waits for the rest of the program; with `susp_us`: waits `susp_us`, or the rest of the program if shorter; a second read joins without another `susp_us`; the die's next program, and a flush without PLP, wait for the program's end pushed back by the read's die time; while the page is still crossing the channel the read waits for the whole program |
+| ssd | TLC read levels (`tr_step_us`) | 4K reads take `tr_us` + 0, 1 or 3 steps, a third each (±4%); the same address always the same; a 16K read takes its slowest 4K |
 | ssd | SATA QD32 reads | 1 / (`cmd_us` + 4K / link), ±3% |
 | ssd | steady random writes | dies × page / (unit × `waf`), ±5% |
 | ssd | sequential writes | min(link, dies × page / unit), ±5% (SATA and NVMe) |
@@ -59,7 +60,7 @@ unit:
 **Randomized tests:** 100 hdd and 100 ssd runs with random parameters
 (cache size, NCQ window, rpm, age limit, write-back window; SATA/NVMe,
 PLP, VWC, dies, page
-size, buffer, WAF, floor, program suspend) and random workloads (reads, writes, flushes,
+size, buffer, WAF, floor, program suspend, TLC read levels) and random workloads (reads, writes, flushes,
 sizes up to 1 MiB, partly sequential, random gaps between arrivals, at
 most a queue depth in flight). The simulator advances the clock to each
 arrival before delivering the events due by then, so these runs mostly
@@ -83,7 +84,7 @@ The test build also compiles the hdd model with `-DMODEL_CHECK_SPTF`,
 which checks every write-back choice against a scan of the whole dirty
 set.
 
-**Result:** 207,207,533 checks, 0 failures (the count depends on the
+**Result:** 241,863,257 checks, 0 failures (the count depends on the
 randomized draws, so it changes whenever a parameter is added).
 
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
@@ -103,7 +104,10 @@ The program suspend path was checked the same way: each of five planted
 bugs (the program not pushed back by the read, a flush not waiting for
 the push, a read joining a suspension paying `susp_us` again, no
 `susp_us` wait, suspending a program that ends sooner) fails one of the
-suspend scenarios.
+suspend scenarios; so do five in the page type and data transfer code
+(suspending a program still receiving its page, twice; levels 1-2-3
+instead of 1-2-4; a multi-4K read timed by its first 4K; page types
+that change between reads).
 
 ## 2. Lateness: does the host deliver the timing?
 
@@ -198,38 +202,50 @@ Where the models hold and where they are too simple:
 - **850 EVO / `sata-consumer`** (fitted to the newer 870 EVO): the model
   is ~12% fast throughout (median 80 vs 92 µs, p99 93 vs 119 µs).
 - **Micron 7300 PRO / `micron-7300`, reads alone:** the drive is slower
-  than its datasheet and bimodal (a quarter of the reads take ~170 µs
-  instead of ~115 µs; the passthrough's interrupt path is a suspect, not
-  verified), the model follows the datasheet (median 94 µs, p99 106 µs).
+  than its datasheet (mean 114–123 µs against 90) and has three modes, a
+  third of the reads each, at 88, 116 and 165 µs. Reading the same
+  addresses twice puts 97–99% of them in the same mode, and 4K blocks
+  next to each other are in different modes at random: the modes are
+  the TLC page types (lower, middle, upper page: 1, 2 and 4 read levels,
+  ~26 µs a level). The profile follows the datasheet: one mode, median
+  94 µs.
 - **Micron, reads next to a writer that fsyncs:** in the model about a
-  fifth of the reads wait for a whole page program (p99 758 µs); the
-  real drive delays far fewer (p99 399 µs), consistent with suspending
-  a program for a read, which the model doesn't do, but it has a rarer
-  multi-millisecond tail (p99.9 2.9 ms).
+  fifth of the reads wait for a whole page program (p99 758 µs). The
+  drive delays about 2%, and a quarter of those by 1–3 ms (p99.9 2.7
+  ms). Its long waits scale with the data written, ~300 per GB whatever
+  the write pattern (4K or 128K, random or sequential, with or without
+  fsync), and last nearly a whole program operation of the TLC drive
+  (peak at 2.5–2.75 ms). So the drive suspends programs for reads,
+  except when the read arrives while the program's data is still
+  crossing the channel, and programs in ~2.7 ms operations, not the
+  profile's 656 µs pages.
 
-**Program suspend, tried against the drive.** `--susp_us 20` (a suspend
-point within ~24 µs, after the ISPP verify phase in Wu and He, FAST '12)
-on `micron-7300`, and the same with `--waf 1`, since the mostly empty
-drive writes at a write amplification near 1. The reader next to the
-fsync writer, total latency in µs, two runs of the drive:
+**The drive's structure in the model.** `--tr_step_us 26` (page types),
+`--susp_us 20` (a suspend point within ~24 µs, after the ISPP verify
+phase in Wu and He, FAST '12), programs of `--page_kb 64 --tprog_us
+2624` (same program bandwidth as the profile's 16 KiB / 656 µs), with
+`--tr_us 54` fitted to this drive's fastest mode on this host and `--waf
+1` (the drive was nearly empty). The reader next to the fsync writer,
+total latency in µs, two runs of the drive:
 
-| | p50 | p90 | p95 | p99 | p99.5 | p99.9 | > 200 µs |
-|---|---|---|---|---|---|---|---|
-| drive, run 1 / run 2 | 115 / 116 | 169 / 167 | 173 / 171 | 403 / 354 | 1532 / 1221 | 2769 / 2703 | 2.2 / 2.6% |
-| `micron-7300` | 111 | 522 | 643 | 758 | 782 | 791 | 22% |
-| `--susp_us 20` | 103 | 121 | 126 | 136 | 140 | 157 | 0.03% |
-| `--waf 1` | 105 | 120 | 151 | 651 | 709 | 766 | 4.5% |
-| `--waf 1 --susp_us 20` | 98 | 112 | 116 | 127 | 132 | 153 | 0.03% |
+| | p50 | p75 | p90 | p95 | p99 | p99.5 | p99.9 | > 1 ms |
+|---|---|---|---|---|---|---|---|---|
+| drive, run 1 / run 2 | 115 / 116 | 136 / 161 | 169 / 167 | 173 / 171 | 403 / 354 | 1532 / 1221 | 2769 / 2703 | 0.55 / 0.52% |
+| `micron-7300` | 111 | 146 | 522 | 643 | 758 | 782 | 791 | 0 |
+| `micron-7300 --waf 1` | 105 | 111 | 120 | 151 | 651 | 709 | 766 | 0 |
+| all of the above | 121 | 169 | 177 | 183 | 198 | 202 | 2802 | 0.14% |
+| … without suspend | 126 | 175 | 189 | 301 | 2310 | 2572 | 2802 | 3.6% |
+| … with 16 KiB programs | 119 | 167 | 177 | 181 | 196 | 200 | 281 | 0 |
+| … without page types | 129 | 134 | 142 | 146 | 157 | 161 | 2802 | 0.15% |
 
-Suspend removes what the drive doesn't show (a fifth of the reads
-waiting for a program) but also every long wait, and the drive has
-some: about 0.5% of its reads wait more than 1 ms, longer than one of
-the model's program units. That fits a drive that suspends most of the
-time but not always (a limit on suspends per program, or erases), with
-program operations of a few ms. The model has neither, so no single
-`susp_us` matches both ends, and the profile keeps `susp_us 0`: over
-p50–p99.9 its percentiles are closer to the drive's (mean |log ratio|
-0.72 against 1.0 with suspend).
+With all of it the model is within 25% of both drive runs at p50–p95
+and p99.9, and reads alone match too (p50 / p90 / p99 113 / 165 / 175
+against 115 / 167 / 185); taking any part out makes it worse. Not
+matched: the drive has 2.5 times more long waits per GB written, spread
+over 1–3 ms where the model has one program length, and ~0.4% of reads
+waiting 0.2–1 ms, so p99 and p99.5 are 45% and 85% low. (An earlier
+`--susp_us` let reads suspend a program that was still receiving its
+data; that version cut every long wait.)
 
 ## 4. Integrity: `bench/integrity.sh`
 

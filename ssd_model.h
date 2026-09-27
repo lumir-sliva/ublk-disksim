@@ -15,6 +15,7 @@ struct ssd_params {
 	unsigned	dies;
 	unsigned	page_kb;	/* program unit */
 	double		tr_us;		/* page read, incl. ECC and lookup */
+	double		tr_step_us;	/* per extra read level (TLC 1-2-4) */
 	double		ch_mbps;	/* flash channel */
 	double		tprog_us;	/* page program */
 	double		waf;		/* program units per random-write page */
@@ -61,14 +62,16 @@ struct ssd_model {
 	struct model_env env;
 	__u64 page_bytes, buf_cap;
 	__u64 tr_ns, cmd_ns, iface_ns, flush_ns, floor_ns, unit_ns, susp_ns;
+	__u64 tr_step_ns, page_xfer_ns;
 	unsigned depth;
 	__u64 now;
 
 	/*
 	 * Per die: end of all work, of its program work (pushed back by
-	 * reads that suspended it), and of its last read.
+	 * reads that suspended it), and of its last read; when the running
+	 * program's data is on the die (it can be suspended from then on).
 	 */
-	__u64 *die_free, *prog_end, *read_end;
+	__u64 *die_free, *prog_end, *read_end, *prog_from;
 
 	/* host link busy intervals, sorted, non-overlapping */
 	struct ssd_iv *link;

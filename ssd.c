@@ -107,13 +107,13 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	dev->private_data = d;
 
 	ublk_log("ssd: %s link %.0f MB/s cmd %.1f us latency %.1f us, %u dies, "
-		 "page %u KiB, read %.1f us, program %.1f us x waf %.2f, "
-		 "suspend %.1f us, channel %.0f MB/s, buffer %u MiB, plp %u "
-		 "vwc %u flush %.1f us, floor %.1f us\n",
+		 "page %u KiB, read %.1f us + %.1f us a level, program %.1f us "
+		 "x waf %.2f, suspend %.1f us, channel %.0f MB/s, buffer %u MiB, "
+		 "plp %u vwc %u flush %.1f us, floor %.1f us\n",
 		 p->nvme ? "nvme" : "sata", p->iface_mbps, p->cmd_us,
-		 p->iface_us, p->dies, p->page_kb, p->tr_us, p->tprog_us,
-		 p->waf, p->susp_us, p->ch_mbps, p->buf_mb, p->plp, p->vwc,
-		 p->flush_us, p->floor_us);
+		 p->iface_us, p->dies, p->page_kb, p->tr_us, p->tr_step_us,
+		 p->tprog_us, p->waf, p->susp_us, p->ch_mbps, p->buf_mb, p->plp,
+		 p->vwc, p->flush_us, p->floor_us);
 	return 0;
 }
 
@@ -173,6 +173,8 @@ static void ssd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->page_kb = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--tr_us"))
 			p->tr_us = strtod(v, NULL);
+		else if (!strcmp(k, "--tr_step_us"))
+			p->tr_step_us = strtod(v, NULL);
 		else if (!strcmp(k, "--ch_mbps"))
 			p->ch_mbps = strtod(v, NULL);
 		else if (!strcmp(k, "--tprog_us"))
@@ -203,7 +205,7 @@ static void ssd_usage(const struct ublk_tgt_ops *ops)
 	       "\t     [--iface sata|nvme]"
 	       " [--iface_mbps X] [--cmd_us X] [--iface_us X]\n"
 	       "\t     [--dies N] [--page_kb N]"
-	       " [--tr_us X] [--ch_mbps X] [--tprog_us X]\n"
+	       " [--tr_us X] [--tr_step_us X] [--ch_mbps X] [--tprog_us X]\n"
 	       "\t     [--waf X] [--susp_us X] [--buf_mb N]"
 	       " [--plp 0|1] [--vwc 0|1] [--flush_us X]\n"
 	       "\t     [--floor_us X] [--stats FILE]\n"

@@ -8,11 +8,17 @@
  *
  *  - `dies` flash dies, each with its own timeline. A read of a page
  *    (die = page number mod dies) occupies its die for tr_us plus the
- *    transfer over the flash channel. It waits for whatever the die is
- *    doing, a program included, unless susp_us is set: then a read that
- *    finds the die programming starts susp_us later, at the program's
- *    next suspend point (reads arriving meanwhile join it), and the
- *    program resumes after the reads, later by their die time. Flushes
+ *    transfer over the flash channel. With tr_step_us each 4K of data
+ *    sits on one of the three TLC page types (lower, middle, upper,
+ *    by a hash of its address, a third each), sensed with 1, 2 and 4
+ *    read levels: tr_us, + tr_step_us, + 3 tr_step_us (a read takes
+ *    its slowest 4K). A read waits for whatever its die is doing, a
+ *    program included, unless susp_us is set: then a read that finds
+ *    the die programming starts susp_us later, at the program's next
+ *    suspend point (reads arriving meanwhile join it), and the program
+ *    resumes after the reads, later by their die time. A program still
+ *    receiving its page over the channel hasn't started and can't be
+ *    suspended: a read arriving then waits for all of it. Flushes
  *    wait for the resumed program; buffer space is freed at the page's
  *    unsuspended end. Channels are not a shared resource: their total
  *    rate is above the host link on the drives this was fitted to;
@@ -288,6 +294,7 @@ static int run_units(struct ssd_model *m)
 		u = pg->units < 1 ? pg->units : 1;
 		m->die_free[best] = s + (__u64)(u * m->unit_ns);
 		m->prog_end[best] = m->die_free[best];
+		m->prog_from[best] = s + (__u64)(u * m->page_xfer_ns);
 		pg->end = max_u64(pg->end, m->die_free[best]);
 		pg->units -= u;
 		m->units_done += u;
@@ -391,8 +398,11 @@ static __u64 die_read(struct ssd_model *m, unsigned d, __u64 t, __u64 len)
 {
 	__u64 s, *pe = &m->prog_end[d], *re = &m->read_end[d];
 
-	/* programming at t, and no read queued behind the program */
-	if (m->susp_ns && *pe > t && *re < *pe) {
+	/*
+	 * a program running past its data transfer at t, and no read
+	 * queued behind it
+	 */
+	if (m->susp_ns && *pe > t && *re < *pe && t >= m->prog_from[d]) {
 		if (*re > t)			/* suspended: join the reads */
 			s = *re;
 		else if (t + m->susp_ns >= *pe)	/* done before it could suspend */
@@ -413,6 +423,27 @@ static __u64 die_read(struct ssd_model *m, unsigned d, __u64 t, __u64 len)
 	return s;
 }
 
+/* extra sense time of the slowest 4K in [s0, e0): TLC page types 1-2-4 */
+static __u64 read_levels_ns(struct ssd_model *m, __u64 s0, __u64 e0)
+{
+	static const unsigned extra[3] = { 0, 1, 3 };
+	unsigned most = 0;
+	__u64 k;
+
+	if (!m->tr_step_ns)
+		return 0;
+	for (k = s0 >> 12; k << 12 < e0 && most < 3; k++) {
+		__u64 h = k * 0x9e3779b97f4a7c15ULL;	/* splitmix64 */
+
+		h = (h ^ (h >> 30)) * 0xbf58476d1ce4e5b9ULL;
+		h = (h ^ (h >> 27)) * 0x94d049bb133111ebULL;
+		h ^= h >> 31;
+		if (extra[h % 3] > most)
+			most = extra[h % 3];
+	}
+	return most * m->tr_step_ns;
+}
+
 static void do_read(struct ssd_model *m, const struct ssd_req *r)
 {
 	__u64 off = r->lba << 9, end = off + (r->nr << 9), fdone = r->t, p;
@@ -422,7 +453,8 @@ static void do_read(struct ssd_model *m, const struct ssd_req *r)
 	for (p = off / m->page_bytes; p * m->page_bytes < end; p++) {
 		__u64 s0 = max_u64(p * m->page_bytes, off);
 		__u64 e0 = min_u64((p + 1) * m->page_bytes, end);
-		__u64 len = m->tr_ns + xfer_ns(m->p.ch_mbps, e0 - s0);
+		__u64 len = m->tr_ns + read_levels_ns(m, s0, e0) +
+			xfer_ns(m->p.ch_mbps, e0 - s0);
 		__u64 s = die_read(m, p % m->p.dies, r->t, len);
 
 		if (s - r->t > wait)
@@ -580,6 +612,7 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	    p->tprog_us <= 0 || p->ch_mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
 	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
+	    p->tr_step_us < 0 ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -599,16 +632,18 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
 	m->page_bytes = (__u64)p->page_kb << 10;
 	m->buf_cap = (__u64)p->buf_mb << 20;
 	m->tr_ns = (__u64)(p->tr_us * 1e3);
+	m->tr_step_ns = (__u64)(p->tr_step_us * 1e3);
 	m->cmd_ns = (__u64)(p->cmd_us * 1e3);
 	m->iface_ns = (__u64)(p->iface_us * 1e3);
 	m->flush_ns = (__u64)(p->flush_us * 1e3);
 	m->susp_ns = (__u64)(p->susp_us * 1e3);
 	m->floor_ns = (__u64)(p->floor_us * 1e3);
-	m->unit_ns = xfer_ns(p->ch_mbps, m->page_bytes) +
-		(__u64)(p->tprog_us * 1e3);
+	m->page_xfer_ns = xfer_ns(p->ch_mbps, m->page_bytes);
+	m->unit_ns = m->page_xfer_ns + (__u64)(p->tprog_us * 1e3);
 	m->die_free = calloc(p->dies, sizeof(*m->die_free));
 	m->prog_end = calloc(p->dies, sizeof(*m->prog_end));
 	m->read_end = calloc(p->dies, sizeof(*m->read_end));
+	m->prog_from = calloc(p->dies, sizeof(*m->prog_from));
 	m->cap_link = 2 * depth;
 	m->link = calloc(m->cap_link, sizeof(*m->link));
 	m->cap_pg = 1024;
@@ -618,8 +653,9 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
 	m->held = calloc(depth, sizeof(*m->held));
 	m->spare = calloc(depth, sizeof(*m->spare));
 	m->nflush = calloc(depth, sizeof(*m->nflush));
-	assert(m->die_free && m->prog_end && m->read_end && m->link && m->pg &&
-	       m->heap && m->wait && m->held && m->spare && m->nflush);
+	assert(m->die_free && m->prog_end && m->read_end && m->prog_from &&
+	       m->link && m->pg && m->heap && m->wait && m->held && m->spare &&
+	       m->nflush);
 	m->sflush_tag = -1;
 	return m;
 }
@@ -631,6 +667,7 @@ void ssd_model_free(struct ssd_model *m)
 	free(m->die_free);
 	free(m->prog_end);
 	free(m->read_end);
+	free(m->prog_from);
 	free(m->link);
 	free(m->pg);
 	free(m->heap);
