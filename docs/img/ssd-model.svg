@@ -29,7 +29,7 @@
 <rect x="190" y="255" width="265" height="120" rx="6" fill="#eaf5ea" stroke="#3d8b3d" stroke-width="1.5"/>
 <text x="322.5" y="272" font-size="12" fill="#222" text-anchor="middle" font-weight="bold">write buffer [32 / 64 / 32 / 64 MiB]</text>
 <text x="322.5" y="289" font-size="10.5" fill="#444" text-anchor="middle">a write is done once it is buffered</text>
-<text x="322.5" y="303" font-size="10.5" fill="#444" text-anchor="middle">full 16 KiB pages go to the first free die</text>
+<text x="322.5" y="303" font-size="10.5" fill="#444" text-anchor="middle">full pages (16 KiB; micron 64) go to the first free die</text>
 <text x="322.5" y="317" font-size="10.5" fill="#444" text-anchor="middle">a page of random writes costs</text>
 <text x="322.5" y="331" font-size="10.5" fill="#444" text-anchor="middle">[7.3 / 4.9 / 13.7 / 5.0] program units</text>
 <text x="322.5" y="345" font-size="10.5" fill="#444" text-anchor="middle">(garbage collection folded in), a stream 1</text>
@@ -48,9 +48,9 @@
 <rect x="548" y="182" width="10" height="10" fill="#dde8f5" stroke="#888"/><text x="562" y="191" font-size="9.5" fill="#555">reading</text>
 <rect x="612" y="182" width="10" height="10" fill="#dcebdc" stroke="#888"/><text x="626" y="191" font-size="9.5" fill="#555">programming</text>
 <text x="545" y="215" font-size="10.5" fill="#333">each die has its own timeline:</text>
-<text x="545" y="231" font-size="10.5" fill="#333">  read = page read [75 / 62 / 46 / 60 µs]</text>
+<text x="545" y="231" font-size="10.5" fill="#333">  read = page read [75 / 62 / 46 / 25, 51 or 103 µs]</text>
 <text x="545" y="246" font-size="10.5" fill="#333">         + channel [800 / 1200 / 1200 / 800 MB/s]</text>
-<text x="545" y="262" font-size="10.5" fill="#333">  program unit = [700 / 400 / 390 / 656 µs]</text>
+<text x="545" y="262" font-size="10.5" fill="#333">  program unit = [700 / 400 / 390 / 2624 µs]</text>
 <text x="545" y="277" font-size="10.5" fill="#333">         + one page over the channel</text>
 <text x="545" y="297" font-size="10.5" fill="#333">a read goes to die (page number mod dies) and</text>
 <text x="545" y="312" font-size="10.5" fill="#333">waits for whatever that die is doing, a program</text>

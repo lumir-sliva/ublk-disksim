@@ -208,8 +208,8 @@ Where the models hold and where they are too simple:
   next to each other are in different modes at random: the modes are
   the TLC page types (lower, middle, upper page: 1, 2 and 4 read levels,
   ~26 µs a level). The profile used to have one mode (median 94 µs);
-  it now has the page types around the datasheet's mean (below). The
-  latency figure above still shows the old profile.
+  it now has the page types around the datasheet's mean (below), as
+  in the figure above (the drive there nearly empty).
 - **Micron, reads next to a writer that fsyncs:** in the model about a
   fifth of the reads wait for a whole page program (p99 758 µs). The
   drive delays about 2%, and a quarter of those by 1–3 ms (p99.9 2.7

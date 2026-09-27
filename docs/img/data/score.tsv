@@ -3,11 +3,11 @@ Micron 7300 PRO, the real drive	seqread-128k	seqread-128k	read	mbps	~	3000	0.1	2
 Micron 7300 PRO, the real drive	seqwrite-128k	seqwrite-128k	write	mbps	~	1550	0.1	1607.327
 Micron 7300 PRO, the real drive	randwrite-qd1	randwrite-qd1	write	lat_mean_us	<=	40	0	20.532
 Micron 7300 PRO, the real drive	randwrite-qd32	randwrite-qd32	write	iops	~	75000	0.15	162556.381
-micron-7300 model (Micron 7300 PRO datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	90	0.1	94.175
-micron-7300 model (Micron 7300 PRO datasheet)	seqread-128k	seqread-128k	read	mbps	~	3000	0.1	2841.163
-micron-7300 model (Micron 7300 PRO datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	1550	0.1	1551.510
-micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd1	randwrite-qd1	write	lat_mean_us	<=	40	0	35.552
-micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	75000	0.15	63624.379
+micron-7300 model (Micron 7300 PRO datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	90	0.1	92.824
+micron-7300 model (Micron 7300 PRO datasheet)	seqread-128k	seqread-128k	read	mbps	~	3000	0.1	2843.431
+micron-7300 model (Micron 7300 PRO datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	1550	0.1	1551.317
+micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd1	randwrite-qd1	write	lat_mean_us	<=	40	0	36.356
+micron-7300 model (Micron 7300 PRO datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	75000	0.15	61873.838
 nvme-plp model (Samsung PM9A3 datasheet)	randread-qd1	randread-qd1	read	lat_mean_us	~	80	0.1	83.372
 nvme-plp model (Samsung PM9A3 datasheet)	seqwrite-128k	seqwrite-128k	write	mbps	~	2700	0.1	2475.973
 nvme-plp model (Samsung PM9A3 datasheet)	randwrite-qd32	randwrite-qd32	write	iops	~	130000	0.1	62068.931
