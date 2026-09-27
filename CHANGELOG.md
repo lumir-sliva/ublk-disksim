@@ -17,13 +17,12 @@ when you report one.
   die:** with `--susp_us`, a read arriving while the program's page is
   still crossing the channel (and the reads behind it) wait for the
   whole program; `--susp_us` results from the previous change move.
-  0, the default of both and every profile's value, keeps the old
-  behaviour.
+  0, the default of both, keeps the old behaviour.
 - **ssd `--susp_us X`: program suspend.** A read that finds its die
   programming waits `X` µs (the program's next suspend point) instead
   of the rest of the program; the program resumes after the read. 0,
-  the default and every profile's value, keeps the old behaviour; no
-  result changes. New stats field `read_suspends`.
+  the default, keeps the old behaviour (no profile used it then). New
+  stats field `read_suspends`.
 - **ssd profile `micron-7300`** (Micron 7300 PRO 3.84 TB, NVMe, PLP, no
   volatile cache), from the datasheet; no existing profile changes.
   `calibrate_ssd.sh REAL=<device>` runs its jobs on a real drive against

@@ -199,8 +199,10 @@ are the datasheet's; steady-state random write sets `waf` (for the 870
 EVO no full-drive figure is published, 12K IOPS is an estimate);
 `flush_us` is fitted to published 4K write + fsync measurements at QD1
 (Ceph community SSD lists: PM883 15.5K/s, PM9A3 70K/s, 870 EVO
-248–311/s). Buffer sizes are assumptions. `micron-7300` was checked
-against the real drive on the same host (below and in
+248–311/s). Buffer sizes are assumptions. `micron-7300` also has the
+structure measured on the real drive (TLC page types, 64 KiB programs
+of 2.7 ms, program suspend), set so that its datasheet numbers stay;
+it was checked against the drive on the same host (below and in
 docs/VALIDATION.md).
 
 ![Where a 4K read and write spend their time in each ssd profile](docs/img/ssd-request.svg)
@@ -226,7 +228,7 @@ synced write in 14 µs, the model at ~22 µs.
 
 `micron-7300` was calibrated on a second host, next to the real drive it
 imitates, with the same jobs: see [docs/VALIDATION.md](docs/VALIDATION.md)
-§3 (QD1 read 94 µs against the datasheet's 90, the real drive 117 µs).
+§3 (QD1 read 93 µs against the datasheet's 90, the real drive 114–123 µs).
 
 ![Reads next to a writer that fsyncs: Samsung 850 EVO, sata-consumer and sata-plp](docs/img/flush-reader.svg)
 

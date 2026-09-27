@@ -219,12 +219,12 @@ Where the models hold and where they are too simple:
   (peak at 2.5–2.75 ms). So the drive suspends programs for reads,
   except when the read arrives while the program's data is still
   crossing the channel, and programs in ~2.7 ms operations, not the
-  profile's 656 µs pages.
+  first profile's 656 µs pages.
 
 **The drive's structure in the model.** `--tr_step_us 26` (page types),
 `--susp_us 20` (a suspend point within ~24 µs, after the ISPP verify
 phase in Wu and He, FAST '12), programs of `--page_kb 64 --tprog_us
-2624` (same program bandwidth as the profile's 16 KiB / 656 µs), with
+2624` (same program bandwidth as the first profile's 16 KiB / 656 µs), with
 `--tr_us 54` fitted to this drive's fastest mode on this host and `--waf
 1` (the drive was nearly empty). The reader next to the fsync writer,
 total latency in µs, two runs of the drive:

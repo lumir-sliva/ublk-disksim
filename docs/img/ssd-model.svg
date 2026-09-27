@@ -82,7 +82,7 @@
 <!-- summary -->
 <rect x="20" y="520" width="860" height="104" fill="#f7f7f7"/>
 <text x="35" y="542" font-size="11" fill="#333" font-weight="bold">What that gives (calibrate_ssd.sh; micron-7300 on a second host)</text>
-<text x="35" y="558" font-size="11" fill="#333">4K random read QD1: 121 / 82 / 79 / 94 µs (datasheets 120 / 80 / 77 / 90); QD32: 96K / 197K / 96K IOPS</text>
+<text x="35" y="558" font-size="11" fill="#333">4K random read QD1: 121 / 82 / 79 / 93 µs (datasheets 120 / 80 / 77 / 90); QD32: 96K / 197K / 96K IOPS</text>
 <text x="35" y="574" font-size="11" fill="#333">128K sequential write: 553 / 2535 / 553 / 1552 MB/s; steady 4K random write QD32: 24.6K / 124K / 11.7K IOPS</text>
 <text x="35" y="590" font-size="11" fill="#333">4K write + fsync QD1: 14.4K/s / 33K/s (no flush sent) / 260/s — the consumer drive pays a full program + flush per fsync</text>
 <text x="35" y="606" font-size="11" fill="#333">every completion minus --floor_us (the host's own ublk overhead, measured by calibrate_ssd.sh), never before arrival</text>

@@ -296,7 +296,7 @@ to `bench/expect/<profile>.tsv`.
 
 Limits: a first-order model. No garbage collection as a process (the
 `waf` factor charges it to the writes that cause it, at steady state),
-no SLC cache, program suspend only with `--susp_us` (0 in the profiles:
-a read behind a program waits for it) and with no limit on suspends per
-program, no reads from the write buffer, one model thread (~190K 4K IOPS and
+no SLC cache, program suspend only with `--susp_us` (0 in every profile
+but `micron-7300`: a read behind a program waits for it) and with no
+limit on suspends per program, no reads from the write buffer, one model thread (~190K 4K IOPS and
 ~4 GB/s on a current server, below NVMe drives' peak).
