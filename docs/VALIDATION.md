@@ -80,8 +80,8 @@ The test build also compiles the hdd model with `-DMODEL_CHECK_SPTF`,
 which checks every write-back choice against a scan of the whole dirty
 set.
 
-**Result:** 36,291,960 checks, 0 failures (the count depends on
-the randomized draws, so it changes whenever a parameter is added).
+**Result:** 36,292,033 checks, 0 failures (the count depends on the
+randomized draws, so it changes whenever a parameter is added).
 
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
 tree:
@@ -92,10 +92,7 @@ tree:
 | ssd SATA flush without PLP doesn't wait for page programs | flush cost lower bound; flush timing check |
 | hdd serves its queue in arrival order (no NCQ reordering) | QD32 ≈ QD1; the starvation control |
 | ssd reads ignore die contention | one-die queueing test |
-| hdd write-back frees cache space when it starts, not ends | **not caught** |
-
-The last one lets the cache hold one track (~1.7 MB, ~2.6% of 64 MiB)
-more than it should; no tested bound is that tight.
+| hdd write-back frees cache space when it starts, not ends | cache capacity scenario: one 64K write too many acknowledged before any write-back could end |
 
 ## 2. Lateness: does the host deliver the timing?
 

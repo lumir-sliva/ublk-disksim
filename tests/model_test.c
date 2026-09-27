@@ -492,6 +492,34 @@ static void hdd_cached_write_and_flush(void)
 	CHECK(s.h->dirty_bytes == 0, "idle drive didn't write back its cache");
 	sim_free(&s);
 
+	/*
+	 * 64K writes spaced apart (no merging) in the far half of the device,
+	 * all at once: none can be on the platters before the head has moved
+	 * there, at least a track-to-track seek, so until then the cache
+	 * acknowledges exactly cache_mb of them, the one being written back
+	 * included.
+	 */
+	cur_test = "hdd: before anything reaches the platters the cache takes cache_mb";
+	p.cache_mb = 1;
+	{
+		unsigned fit = (p.cache_mb << 20) / 65536, n = fit + 8, fast = 0;
+		int tags[MAXQ];
+		__u64 horizon;
+
+		hdd_up(&s, &p, n);
+		horizon = s.now + (__u64)(p.seek_min_ms * 1e6);
+		for (i = 0; i < (int)n; i++)
+			tags[i] = sim_submit(&s, MODEL_WRITE,
+					     HDD_SECTORS / 2 + i * 1024ULL, 128, NULL);
+		sim_drain(&s, s.now + 10 * SEC);
+		for (i = 0; i < (int)n; i++)
+			fast += s.rq[tags[i]].done_at < horizon;
+		CHECK(fast == fit, "%u 64K writes acknowledged before any "
+		      "write-back could end, the cache holds %u", fast, fit);
+		sim_free(&s);
+	}
+	p = hdd_p();
+
 	cur_test = "hdd: FLUSH writes back everything and holds later requests";
 	hdd_up(&s, &p, 32);
 	for (i = 0; i < 16; i++) {
