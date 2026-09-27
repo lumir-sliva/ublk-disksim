@@ -583,13 +583,16 @@ static const struct {
 	} },
 	/*
 	 * Micron 7300 PRO 3.84 TB M.2: enterprise NVMe (PCIe 3 x4), PLP,
-	 * no VWC; 64 dies of 512 Gb 96-layer TLC
+	 * no VWC; 64 dies of 512 Gb 96-layer TLC. Structure measured on the
+	 * drive (see VALIDATION): TLC page types a third each (mean read =
+	 * the datasheet's), 64 KiB programs of 2.7 ms (the datasheet's
+	 * sequential write rate), reads suspend programs.
 	 */
 	{ "micron-7300", {
 		.nvme = 1, .iface_mbps = 3000, .cmd_us = 0, .iface_us = 23.6,
-		.dies = 64, .page_kb = 16, .tr_us = 60, .ch_mbps = 800,
-		.tprog_us = 656, .waf = 5.0, .buf_mb = 64,
-		.plp = 1, .vwc = 0, .flush_us = 0,
+		.dies = 64, .page_kb = 64, .tr_us = 25, .tr_step_us = 26,
+		.ch_mbps = 800, .tprog_us = 2624, .waf = 5.0, .susp_us = 20,
+		.buf_mb = 64, .plp = 1, .vwc = 0, .flush_us = 0,
 	} },
 };
 

@@ -673,7 +673,9 @@ def draw_ssd_request(plt, src, out):
             fig.add_axes([0.72, 0.55 / H, 0.25, 1 - 2.2 / H])]
     for i, n in enumerate(names):
         p = profs[n]
-        read = [p.get("cmd_us", 0), p["tr_us"], x4k(p["ch_mbps"]),
+        # mean over the TLC page types: tr_us + (0 + 1 + 3) / 3 steps
+        tr = p["tr_us"] + p.get("tr_step_us", 0) * 4 / 3
+        read = [p.get("cmd_us", 0), tr, x4k(p["ch_mbps"]),
                 x4k(p["iface_mbps"]), p["iface_us"]]
         write = [p.get("cmd_us", 0), 0, 0, x4k(p["iface_mbps"]), p["iface_us"]]
         for ax, seg, ref in ((axes[0], read, spec[n][0]), (axes[1], write, spec[n][1])):

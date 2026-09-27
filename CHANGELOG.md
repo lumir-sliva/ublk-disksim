@@ -6,6 +6,11 @@ when you report one.
 
 ## Unreleased
 
+- **`micron-7300` changes** (results move): TLC page types (`tr_us 25`,
+  `tr_step_us 26`, same mean read), 64 KiB programs of 2.7 ms (`page_kb
+  64`, `tprog_us 2624`, same program bandwidth) and `susp_us 20`, as
+  measured on the drive. Calibration rows unchanged within noise; reads
+  next to writers now wait ~20 µs mostly and a whole program rarely.
 - **ssd `--tr_step_us X`: TLC page types.** Each 4K reads in `tr_us`,
   `tr_us + X` or `tr_us + 3X` (1, 2, 4 read levels), fixed per address,
   a third each. **Program suspend waits for the page to reach the

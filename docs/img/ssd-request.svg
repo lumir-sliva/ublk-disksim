@@ -255,33 +255,33 @@ z
    </g>
    <g id="patch_17">
     <path d="M 151.2 407.884337 
-L 275.94 407.884337 
-L 275.94 366.853012 
+L 275.247 407.884337 
+L 275.247 366.853012 
 L 151.2 366.853012 
 z
 " clip-path="url(#p7f7dbad7f7)" style="fill: #2b8a3e"/>
    </g>
    <g id="patch_18">
-    <path d="M 275.94 407.884337 
-L 286.58448 407.884337 
-L 286.58448 366.853012 
-L 275.94 366.853012 
+    <path d="M 275.247 407.884337 
+L 285.89148 407.884337 
+L 285.89148 366.853012 
+L 275.247 366.853012 
 z
 " clip-path="url(#p7f7dbad7f7)" style="fill: #74b886"/>
    </g>
    <g id="patch_19">
-    <path d="M 286.58448 407.884337 
-L 289.423008 407.884337 
-L 289.423008 366.853012 
-L 286.58448 366.853012 
+    <path d="M 285.89148 407.884337 
+L 288.730008 407.884337 
+L 288.730008 366.853012 
+L 285.89148 366.853012 
 z
 " clip-path="url(#p7f7dbad7f7)" style="fill: #74a9e8"/>
    </g>
    <g id="patch_20">
-    <path d="M 289.423008 407.884337 
-L 338.487408 407.884337 
-L 338.487408 366.853012 
-L 289.423008 366.853012 
+    <path d="M 288.730008 407.884337 
+L 337.794408 407.884337 
+L 337.794408 366.853012 
+L 288.730008 366.853012 
 z
 " clip-path="url(#p7f7dbad7f7)" style="fill: #1c6dd0"/>
    </g>
@@ -338,7 +338,7 @@ L 483.84 428.4
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: end; fill: #5f6b73" x="141.2208" y="323.053729" transform="rotate(-0 141.2208 323.053729)">Samsung 870 EVO, SATA</text>
    </g>
    <g id="text_20">
-    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="342.645408" y="389.956565" transform="rotate(-0 342.645408 389.956565)">90 µs</text>
+    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="341.952408" y="389.956565" transform="rotate(-0 341.952408 389.956565)">90 µs</text>
    </g>
    <g id="text_21">
     <text style="font-weight: 700; font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: end; fill: #1d2327" x="141.2208" y="377.698717" transform="rotate(-0 141.2208 377.698717)">micron-7300</text>

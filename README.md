@@ -177,13 +177,13 @@ the write buffer, mapping table misses, TRIM, multiple NVMe queues.
 | `--cmd_us` | link time per command | 3 | 0 | 3 | 0 |
 | `--iface_us` | controller latency per command | 29 | 14 | 17.5 | 23.6 |
 | `--dies` | flash dies | 32 | 64 | 16 | 64 |
-| `--page_kb` | program unit | 16 | 16 | 16 | 16 |
-| `--tr_us` | page read, incl. ECC and lookup | 75 | 62 | 46 | 60 |
-| `--tr_step_us` | per extra TLC read level (0: all pages read in `tr_us`) | 0 | 0 | 0 | 0 |
+| `--page_kb` | program unit | 16 | 16 | 16 | 64 |
+| `--tr_us` | page read, incl. ECC and lookup (fastest page type) | 75 | 62 | 46 | 25 |
+| `--tr_step_us` | per extra TLC read level (0: all pages read in `tr_us`) | 0 | 0 | 0 | 26 |
 | `--ch_mbps` | flash channel rate | 800 | 1200 | 1200 | 800 |
-| `--tprog_us` | page program | 700 | 400 | 390 | 656 |
+| `--tprog_us` | page program | 700 | 400 | 390 | 2624 |
 | `--waf` | program units per page of random writes | 7.3 | 4.9 | 13.7 | 5.0 |
-| `--susp_us` | program suspend for a read (0: none) | 0 | 0 | 0 | 0 |
+| `--susp_us` | program suspend for a read (0: none) | 0 | 0 | 0 | 20 |
 | `--buf_mb` | write buffer | 32 | 64 | 32 | 64 |
 | `--plp` | power-loss protection | 1 | 1 | 0 | 1 |
 | `--vwc` | advertise a volatile write cache | 1 | 0 | 1 | 0 |

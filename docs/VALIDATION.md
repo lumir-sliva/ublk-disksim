@@ -207,8 +207,9 @@ Where the models hold and where they are too simple:
   addresses twice puts 97–99% of them in the same mode, and 4K blocks
   next to each other are in different modes at random: the modes are
   the TLC page types (lower, middle, upper page: 1, 2 and 4 read levels,
-  ~26 µs a level). The profile follows the datasheet: one mode, median
-  94 µs.
+  ~26 µs a level). The profile used to have one mode (median 94 µs);
+  it now has the page types around the datasheet's mean (below). The
+  latency figure above still shows the old profile.
 - **Micron, reads next to a writer that fsyncs:** in the model about a
   fifth of the reads wait for a whole page program (p99 758 µs). The
   drive delays about 2%, and a quarter of those by 1–3 ms (p99.9 2.7
@@ -246,6 +247,30 @@ over 1–3 ms where the model has one program length, and ~0.4% of reads
 waiting 0.2–1 ms, so p99 and p99.5 are 45% and 85% low. (An earlier
 `--susp_us` let reads suspend a program that was still receiving its
 data; that version cut every long wait.)
+
+**The drive in steady state.** After one sequential pass and 0.7 drive
+capacities of 4K random writes over the whole drive, its random write
+rate settled at 70–77K IOPS (datasheet 75K; the profile's `waf 5.0` is
+fitted to that figure). Then the reader next to the fsync writer, both
+over the whole drive, µs:
+
+| | p50 | p75 | p90 | p95 | p99 | p99.5 | p99.9 | > 1 ms |
+|---|---|---|---|---|---|---|---|---|
+| drive, steady state | 104 | 136 | 255 | 489 | 2376 | 2703 | 3097 | 2.9% |
+| `micron-7300` before | 110 | 148 | 528 | 651 | 766 | 782 | 791 | 0 |
+| `micron-7300` now | 96 | 146 | 161 | 169 | 189 | 2769 | 2834 | 0.7% |
+
+Long waits now come five times as often per GB written, as garbage
+collection programs about five times the data; the model with the
+drive's structure gets closer over p50–p99.9 (mean |log ratio| 0.62
+against 0.70) but still has 2.2 times fewer long waits than the drive,
+so p95–p99 stay low. `micron-7300` now carries the measured structure
+around the datasheet's mean read (`tr_us 25`, `tr_step_us 26`: mean 60
+as before, `page_kb 64`, `tprog_us 2624`, `susp_us 20`); every
+calibration row is unchanged within run noise (QD1 read 92.8 µs,
+sequential 2843 / 1551 MB/s, random write QD32 62K thread-bound). On
+this host the drive's reads are ~30 µs slower than its datasheet
+(fitting that: `--tr_us 54`).
 
 ## 4. Integrity: `bench/integrity.sh`
 
