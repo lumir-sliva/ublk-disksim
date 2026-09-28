@@ -838,6 +838,15 @@ static void ssd_rates(void)
 	CHECK(fabs(iops - want) / want < 0.03, "%.0f IOPS, 1/(cmd + 4K link) = %.0f",
 	      iops, want);
 
+	cur_test = "ssd: NVMe reads with cmd_us top out at the command rate";
+	p = *ssd_profile("nvme-plp");
+	p.cmd_us = 2;
+	iops = ssd_run(&p, 64, MODEL_READ, RAND, 8, 64, 0, 1, NULL);
+	want = 1e9 / (p.cmd_us * 1e3 + xfer_ns_of(p.iface_mbps, 4096));
+	CHECK(fabs(iops - want) / want < 0.03, "%.0f IOPS, 1/(cmd + 4K link) = %.0f",
+	      iops, want);
+	p = *ssd_profile("sata-plp");
+
 	cur_test = "ssd: steady random writes = dies x page / (unit x waf)";
 	iops = ssd_run(&p, 32, MODEL_WRITE, RAND, 8, 32, 3, 10, NULL);
 	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) * p.waf / 1e9) / 4096;
@@ -1246,7 +1255,7 @@ static void ssd_random(int runs)
 		p.floor_us = rnd_below(2) ? 0 : 20;
 		p.susp_us = rnd_below(2) ? 0 : 20;
 		p.tr_step_us = rnd_below(2) ? 0 : 26;
-		p.cmd_us = p.nvme ? 0 : 3;
+		p.cmd_us = p.nvme ? (rnd_below(2) ? 0 : 0.56) : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
 		s.deep_check = 1;

@@ -49,7 +49,7 @@ unit:
 | ssd | reads on different dies | overlap; on one die they queue (≥ n × `tr_us`) |
 | ssd | read on a programming die | `susp_us` 0: waits for the rest of the program; with `susp_us`: waits `susp_us`, or the rest of the program if shorter; a second read joins without another `susp_us`; the die's next program, and a flush without PLP, wait for the program's end pushed back by the read's die time; while the page is still crossing the channel the read waits for the whole program |
 | ssd | TLC read levels (`tr_step_us`) | 4K reads take `tr_us` + 0, 1 or 3 steps, a third each (±4%); the same address always the same; a 16K read takes its slowest 4K |
-| ssd | SATA QD32 reads | 1 / (`cmd_us` + 4K / link), ±3% |
+| ssd | SATA QD32 reads; NVMe QD64 reads with `cmd_us` | 1 / (`cmd_us` + 4K / link), ±3% |
 | ssd | steady random writes | dies × page / (unit × `waf`), ±5% |
 | ssd | sequential writes | min(link, dies × page / unit), ±5% (SATA and NVMe) |
 | ssd | FLUSH | PLP: `flush_us`; nothing written since the last: free; no PLP: one page program + `flush_us` |
@@ -272,6 +272,31 @@ sequential 2843 / 1551 MB/s, random write QD32 62K thread-bound). On
 this host the drive's reads are ~30 µs slower than its datasheet
 (fitting that: `--tr_us 54`).
 
+**Beyond the calibration jobs.** The same drive, full but rested (17 h
+idle after the runs above: random writes back at 150K IOPS), through a
+wider set of fio jobs over the whole drive. The model's side is the
+model core on the virtual clock of `tests/model_test.c`, driven by
+fio-like closed-loop jobs: on this host one server thread caps the
+ublk device at ~85K IOPS.
+
+- 4K random reads scale with queue depth as in the model up to QD64
+  (drive 9.9K / 73K / 252K / 395K at QD1 / 8 / 32 / 64, the model
+  12–17% higher: its read time is the datasheet's) and top out at 534K
+  at QD256 (datasheet 520K at QD512). `cmd_us 0.56` gives the model
+  the datasheet's ceiling: 504K / 519K at QD128 / 256, before 647K /
+  703K.
+- Large reads depend on how the data was written: a 128K read takes
+  247 µs on data written sequentially (model 252) and 379 µs on data
+  written by 4K random writes, whether the reads are sequential or
+  random; 1M reads 807 / 1106 µs (model 558). The model assumes
+  sequentially written data.
+- Sequential writes on the full drive run at ~410 MB/s (model 1550):
+  there a sequential stream also needs blocks freed by garbage
+  collection, which the model charges only to random writes.
+- A resting drive recovers: random writes at 150K after 17 h idle, 75K
+  in steady state. The model has no idle recovery; `waf` is the steady
+  state.
+
 ## 4. Integrity: `bench/integrity.sh`
 
 fio with `--verify=crc32c` on each of hdd (64 MiB cache, cache off,
@@ -346,8 +371,10 @@ depend on how full the drive is.
   HDD's buffer caches writes (64 MiB). ssd buffer sizes. None of these
   is published by the drive vendors.
 - **Not modelled:** see the "Not modelled" lists in README; in particular
-  GC as a process, SLC caching and fill level on SSDs, and zoned
-  transfer rates on HDDs.
+  GC as a process, SLC caching and fill level on SSDs (so no idle
+  recovery, and sequential writes on a full drive run at the empty
+  drive's rate), write history (large reads of randomly written data
+  are slower), and zoned transfer rates on HDDs.
 
 ## Rerunning
 

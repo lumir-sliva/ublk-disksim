@@ -255,33 +255,41 @@ z
    </g>
    <g id="patch_17">
     <path d="M 151.2 422.284337 
-L 275.247 422.284337 
-L 275.247 381.253012 
+L 152.36424 422.284337 
+L 152.36424 381.253012 
 L 151.2 381.253012 
+z
+" clip-path="url(#pb3d17b446a)" style="fill: #9aa5ad"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 152.36424 422.284337 
+L 276.41124 422.284337 
+L 276.41124 381.253012 
+L 152.36424 381.253012 
 z
 " clip-path="url(#pb3d17b446a)" style="fill: #2b8a3e"/>
    </g>
-   <g id="patch_18">
-    <path d="M 275.247 422.284337 
-L 285.89148 422.284337 
-L 285.89148 381.253012 
-L 275.247 381.253012 
+   <g id="patch_19">
+    <path d="M 276.41124 422.284337 
+L 287.05572 422.284337 
+L 287.05572 381.253012 
+L 276.41124 381.253012 
 z
 " clip-path="url(#pb3d17b446a)" style="fill: #74b886"/>
    </g>
-   <g id="patch_19">
-    <path d="M 285.89148 422.284337 
-L 288.730008 422.284337 
-L 288.730008 381.253012 
-L 285.89148 381.253012 
+   <g id="patch_20">
+    <path d="M 287.05572 422.284337 
+L 289.894248 422.284337 
+L 289.894248 381.253012 
+L 287.05572 381.253012 
 z
 " clip-path="url(#pb3d17b446a)" style="fill: #74a9e8"/>
    </g>
-   <g id="patch_20">
-    <path d="M 288.730008 422.284337 
-L 337.794408 422.284337 
-L 337.794408 381.253012 
-L 288.730008 381.253012 
+   <g id="patch_21">
+    <path d="M 289.894248 422.284337 
+L 338.958648 422.284337 
+L 338.958648 381.253012 
+L 289.894248 381.253012 
 z
 " clip-path="url(#pb3d17b446a)" style="fill: #1c6dd0"/>
    </g>
@@ -305,7 +313,7 @@ L 311.283 298.817349
 L 338.31 373.419759 
 " clip-path="url(#pb3d17b446a)" style="fill: none; stroke: #d9480f; stroke-width: 2.2; stroke-linecap: square"/>
    </g>
-   <g id="patch_21">
+   <g id="patch_22">
     <path d="M 151.2 442.8 
 L 483.84 442.8 
 " style="fill: none; stroke: #c3c9cd; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
@@ -338,7 +346,7 @@ L 483.84 442.8
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: end; fill: #5f6b73" x="141.2208" y="337.453729" transform="rotate(-0 141.2208 337.453729)">Samsung 870 EVO, SATA</text>
    </g>
    <g id="text_20">
-    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="341.952408" y="404.356565" transform="rotate(-0 341.952408 404.356565)">90 µs</text>
+    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="343.116648" y="404.356565" transform="rotate(-0 343.116648 404.356565)">90 µs</text>
    </g>
    <g id="text_21">
     <text style="font-weight: 700; font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: end; fill: #1d2327" x="141.2208" y="392.098717" transform="rotate(-0 141.2208 392.098717)">micron-7300</text>
@@ -351,7 +359,7 @@ L 483.84 442.8
    </g>
   </g>
   <g id="axes_2">
-   <g id="patch_22">
+   <g id="patch_23">
     <path d="M 544.32 442.8 
 L 733.32 442.8 
 L 733.32 133.2 
@@ -409,7 +417,7 @@ L 733.32 133.2
     </g>
    </g>
    <g id="matplotlib.axis_4"/>
-   <g id="patch_23">
+   <g id="patch_24">
     <path d="M 544.32 198.477108 
 L 553.77 198.477108 
 L 553.77 157.445783 
@@ -417,7 +425,7 @@ L 544.32 157.445783
 z
 " clip-path="url(#pb482972240)" style="fill: #9aa5ad"/>
    </g>
-   <g id="patch_24">
+   <g id="patch_25">
     <path d="M 553.77 198.477108 
 L 576.81 198.477108 
 L 576.81 157.445783 
@@ -425,7 +433,7 @@ L 553.77 157.445783
 z
 " clip-path="url(#pb482972240)" style="fill: #74a9e8"/>
    </g>
-   <g id="patch_25">
+   <g id="patch_26">
     <path d="M 576.81 198.477108 
 L 668.16 198.477108 
 L 668.16 157.445783 
@@ -433,7 +441,7 @@ L 576.81 157.445783
 z
 " clip-path="url(#pb482972240)" style="fill: #1c6dd0"/>
    </g>
-   <g id="patch_26">
+   <g id="patch_27">
     <path d="M 544.32 273.079518 
 L 546.189913 273.079518 
 L 546.189913 232.048193 
@@ -441,7 +449,7 @@ L 544.32 232.048193
 z
 " clip-path="url(#pb482972240)" style="fill: #74a9e8"/>
    </g>
-   <g id="patch_27">
+   <g id="patch_28">
     <path d="M 546.189913 273.079518 
 L 590.289913 273.079518 
 L 590.289913 232.048193 
@@ -449,7 +457,7 @@ L 546.189913 232.048193
 z
 " clip-path="url(#pb482972240)" style="fill: #1c6dd0"/>
    </g>
-   <g id="patch_28">
+   <g id="patch_29">
     <path d="M 544.32 347.681928 
 L 553.77 347.681928 
 L 553.77 306.650602 
@@ -457,7 +465,7 @@ L 544.32 306.650602
 z
 " clip-path="url(#pb482972240)" style="fill: #9aa5ad"/>
    </g>
-   <g id="patch_29">
+   <g id="patch_30">
     <path d="M 553.77 347.681928 
 L 576.81 347.681928 
 L 576.81 306.650602 
@@ -465,7 +473,7 @@ L 553.77 306.650602
 z
 " clip-path="url(#pb482972240)" style="fill: #74a9e8"/>
    </g>
-   <g id="patch_30">
+   <g id="patch_31">
     <path d="M 576.81 347.681928 
 L 631.935 347.681928 
 L 631.935 306.650602 
@@ -473,19 +481,27 @@ L 576.81 306.650602
 z
 " clip-path="url(#pb482972240)" style="fill: #1c6dd0"/>
    </g>
-   <g id="patch_31">
+   <g id="patch_32">
     <path d="M 544.32 422.284337 
-L 548.6208 422.284337 
-L 548.6208 381.253012 
+L 546.084 422.284337 
+L 546.084 381.253012 
 L 544.32 381.253012 
+z
+" clip-path="url(#pb482972240)" style="fill: #9aa5ad"/>
+   </g>
+   <g id="patch_33">
+    <path d="M 546.084 422.284337 
+L 550.3848 422.284337 
+L 550.3848 381.253012 
+L 546.084 381.253012 
 z
 " clip-path="url(#pb482972240)" style="fill: #74a9e8"/>
    </g>
-   <g id="patch_32">
-    <path d="M 548.6208 422.284337 
-L 622.9608 422.284337 
-L 622.9608 381.253012 
-L 548.6208 381.253012 
+   <g id="patch_34">
+    <path d="M 550.3848 422.284337 
+L 624.7248 422.284337 
+L 624.7248 381.253012 
+L 550.3848 381.253012 
 z
 " clip-path="url(#pb482972240)" style="fill: #1c6dd0"/>
    </g>
@@ -504,7 +520,7 @@ L 589.365 224.21494
 L 623.07 373.419759 
 " clip-path="url(#pb482972240)" style="fill: none; stroke: #d9480f; stroke-width: 2.2; stroke-linecap: square"/>
    </g>
-   <g id="patch_33">
+   <g id="patch_35">
     <path d="M 544.32 442.8 
 L 733.32 442.8 
 " style="fill: none; stroke: #c3c9cd; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
@@ -519,7 +535,7 @@ L 733.32 442.8
     <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="638.235" y="329.754156" transform="rotate(-0 638.235 329.754156)">28 µs</text>
    </g>
    <g id="text_32">
-    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="629.2608" y="404.356565" transform="rotate(-0 629.2608 404.356565)">25 µs</text>
+    <text style="font-weight: 700; font-size: 10px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="631.0248" y="404.356565" transform="rotate(-0 631.0248 404.356565)">26 µs</text>
    </g>
    <g id="text_33">
     <text style="font-weight: 700; font-size: 11px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="544.32" y="121.596844" transform="rotate(-0 544.32 121.596844)">4K write (into the buffer)</text>
@@ -534,7 +550,7 @@ L 733.32 442.8
    <text style="font-size: 10.5px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; fill: #5f6b73" transform="translate(9.072 74.645889)">The micron-7300 page read is the mean over its TLC page types (25 / 51 / 103 µs).</text>
   </g>
   <g id="legend_1">
-   <g id="patch_34">
+   <g id="patch_36">
     <path d="M 159.3 101.052246 
 L 170.1 101.052246 
 L 170.1 94.752246 
@@ -545,7 +561,7 @@ z
    <g id="text_36">
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="177.3" y="101.052246" transform="rotate(-0 177.3 101.052246)">command</text>
    </g>
-   <g id="patch_35">
+   <g id="patch_37">
     <path d="M 227.612813 101.052246 
 L 238.412813 101.052246 
 L 238.412813 94.752246 
@@ -556,7 +572,7 @@ z
    <g id="text_37">
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="245.612813" y="101.052246" transform="rotate(-0 245.612813 101.052246)">page read on the die</text>
    </g>
-   <g id="patch_36">
+   <g id="patch_38">
     <path d="M 338.97375 101.052246 
 L 349.77375 101.052246 
 L 349.77375 94.752246 
@@ -567,7 +583,7 @@ z
    <g id="text_38">
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="356.97375" y="101.052246" transform="rotate(-0 356.97375 101.052246)">die → controller</text>
    </g>
-   <g id="patch_37">
+   <g id="patch_39">
     <path d="M 430.79625 101.052246 
 L 441.59625 101.052246 
 L 441.59625 94.752246 
@@ -578,7 +594,7 @@ z
    <g id="text_39">
     <text style="font-size: 9px; font-family: 'Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #1d2327" x="448.79625" y="101.052246" transform="rotate(-0 448.79625 101.052246)">host link</text>
    </g>
-   <g id="patch_38">
+   <g id="patch_40">
     <path d="M 492.610781 101.052246 
 L 503.410781 101.052246 
 L 503.410781 94.752246 

@@ -1,8 +1,9 @@
 # Micron 7300 PRO 3.84 TB M.2 (enterprise NVMe, PLP, no VWC), datasheet
 # Rev D 07/2020. Checks the model and, with REAL=<dev>, the drive itself.
-# Not checked: reads above ~190K IOPS (one server thread; the spec's 520K
-# is at QD512). The steady-state random write needs a preconditioned
-# drive: a drive with free space runs faster and fails that row high.
+# Not checked: reads above ~190K IOPS (one server thread; the model's
+# ceiling, set by cmd_us, is 519K, the spec's 520K at QD512). The
+# steady-state random write needs a preconditioned drive: a drive with
+# free space runs faster and fails that row high.
 # label	job	rw	metric	kind	value	tolerance	source
 randread-qd1	randread-qd1	read	lat_mean_us	~	90	0.1	spec: 90 us average read latency
 seqread-128k	seqread-128k	read	mbps	~	3000	0.1	spec: 3000 MB/s

@@ -281,10 +281,12 @@ to a fsyncing writer. Latencies are fio's submission to completion
 README there).
 
 To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
-write latency, `tr_us` to the QD1 read latency, `cmd_us` (SATA) to the
-QD32 random read IOPS, `dies` · page / (`tprog_us` + page / `ch_mbps`)
-to the sequential write rate, and `waf` to the steady-state (full drive) random write
-IOPS. With the drive at hand, a QD1 random read with fio's per-I/O log
+write latency, `tr_us` to the QD1 read latency, `cmd_us` to the peak
+random read IOPS (1 / IOPS − 4 KiB / `iface_mbps`; SATA: QD32, NVMe:
+the datasheet's deep-queue figure), `dies` · page / (`tprog_us` + page
+/ `ch_mbps`) to the sequential write rate, and `waf` to the
+steady-state (full drive) random write IOPS. With the drive at hand, a
+QD1 random read with fio's per-I/O log
 (`--write_lat_log`, `--log_offset=1`) shows whether its reads have page
 type modes: on TLC three, a third each, spaced 1 : 3 steps
 (`tr_step_us`, with `tr_us` the fastest). `flush_us` comes from a

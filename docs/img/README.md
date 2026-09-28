@@ -27,8 +27,8 @@ Where the runs came from:
   so drive and model ran on the same host.
   The drive was measured while nearly empty. The `micron-7300` model
   runs behind `score.tsv`, `latency.tsv` and `integrity.tsv` used the
-  current profile (TLC page types, 64 KiB programs, suspend), not the
-  one first fitted.
+  profile with TLC page types, 64 KiB programs and suspend, before
+  `cmd_us 0.56`, which adds 0.56 µs per request to their jobs.
 - Samsung 850 EVO 250 GB and Seagate ST2000DM006: fio 3.43 on Windows
   (`windowsaio`, `--direct=1`, a 2 GiB / 4 GiB test file on NTFS; on
   the nearly full HDD the file is spread over the whole platter), the

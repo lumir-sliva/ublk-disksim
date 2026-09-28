@@ -6,6 +6,11 @@ when you report one.
 
 ## Unreleased
 
+- **`micron-7300` `cmd_us 0.56`** (results move above ~300K reads/s):
+  4K random reads top out at 519K IOPS (datasheet 520K at QD512; the
+  real drive 534K at QD256) instead of rising to ~700K. Every command,
+  read or write, is 0.56 µs longer, and 128K sequential reads top out
+  at ~2960 instead of 3000 MB/s.
 - **`micron-7300` changes** (results move): TLC page types (`tr_us 25`,
   `tr_step_us 26`, same mean read), 64 KiB programs of 2.7 ms (`page_kb
   64`, `tprog_us 2624`, same program bandwidth) and `susp_us 20`, as

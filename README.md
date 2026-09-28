@@ -149,8 +149,9 @@ What it models (see the header of `ssd_model.c`):
   behind it wait for the whole program); the program resumes after the
   read;
 - a host link (`iface_mbps`, plus `cmd_us` of link time per command; on
-  SATA that command rate caps 4K random reads near 100K IOPS, the NVMe
-  profile sets it to 0) and a controller latency `iface_us` per command;
+  SATA that command rate caps 4K random reads near 100K IOPS, on
+  `micron-7300` at the datasheet's ~520K, `nvme-plp` sets it to 0) and a
+  controller latency `iface_us` per command;
 - a write buffer: writes complete once buffered; full pages are
   programmed on whichever die is free first. Steady-state garbage
   collection is folded in: a page of random writes costs `waf` program
@@ -165,16 +166,19 @@ What it models (see the header of `ssd_model.c`):
 - `--floor_us`: the host's own ublk overhead, subtracted from every
   completion so that the parameters are device latencies (docs/GUIDE.md).
 
-Not modelled: garbage collection as a process (idle-time GC, fill level),
-SLC caching, erase suspend and limits on program suspends, reads from
-the write buffer, mapping table misses, TRIM, multiple NVMe queues.
+Not modelled: garbage collection as a process (idle-time GC, fill level;
+on a full drive sequential writes also pay for it), write history (after
+4K random writes a large read touches many pages: on the real Micron a
+128K read takes 379 µs instead of 247), SLC caching, erase suspend and
+limits on program suspends, reads from the write buffer, mapping table
+misses, TRIM, multiple NVMe queues.
 
 | option | meaning | `sata-plp` | `nvme-plp` | `sata-consumer` | `micron-7300` |
 |---|---|---|---|---|---|
 | `--profile` | named parameter set, applied first | | | | |
 | `--iface` | `sata` or `nvme` | sata | nvme | sata | nvme |
 | `--iface_mbps` | host link rate | 560 | 6900 | 560 | 3000 |
-| `--cmd_us` | link time per command | 3 | 0 | 3 | 0 |
+| `--cmd_us` | link time per command | 3 | 0 | 3 | 0.56 |
 | `--iface_us` | controller latency per command | 29 | 14 | 17.5 | 23.6 |
 | `--dies` | flash dies | 32 | 64 | 16 | 64 |
 | `--page_kb` | program unit | 16 | 16 | 16 | 64 |
