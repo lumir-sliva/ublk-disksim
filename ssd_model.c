@@ -258,16 +258,20 @@ static void close_open(struct ssd_model *m, __u64 ready)
 		m->heap = realloc(m->heap, cap * sizeof(*m->heap));
 		assert(m->heap);
 	}
-	/* bytes that need GC copies take erased space from the pool first */
+	/*
+	 * The page's GC need, as bytes of a whole page (a partial page a
+	 * flush closes still costs a whole page's copies), taken from the
+	 * pool first.
+	 */
 	pool_refill(m, ready);
-	gc = m->open_gc;
+	gc = (double)m->open_gc * m->page_bytes / m->open_bytes;
 	used = gc < m->pool ? gc : m->pool;
 	m->pool -= used;
 	m->pool_used += used;
 	pg = page(m, m->seq_next++);
 	pg->bytes = m->open_bytes;
 	pg->ready = ready;
-	pg->units = 1 + (m->p.waf - 1) * (gc - used) / m->open_bytes;
+	pg->units = 1 + (m->p.waf - 1) * (gc - used) / m->page_bytes;
 	pg->end = 0;
 	pg->freed = 0;
 	m->open_bytes = m->open_gc = 0;

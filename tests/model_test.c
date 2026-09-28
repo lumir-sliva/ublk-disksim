@@ -1437,6 +1437,7 @@ static void ssd_random(int runs)
 		struct ssd_params p = *ssd_profile("sata-plp");
 		unsigned depth;
 		struct sim s;
+		__u64 c, n;
 
 		p.nvme = rnd_below(2);
 		p.plp = rnd_below(2);
@@ -1458,6 +1459,11 @@ static void ssd_random(int runs)
 		s.deep_check = 1;
 		cur_test = "ssd randomized: invariants";
 		random_workload(&s, 2048, 1, 3000);
+		/* the scattered count GC charges by matches the bits */
+		for (n = 0, c = 0; c < s.s->nchunk; c++)
+			n += s.s->hist[c >> 3] >> (c & 7) & 1;
+		CHECK(n == s.s->nscat, "nscat %llu, scattered chunks %llu",
+		      (unsigned long long)s.s->nscat, (unsigned long long)n);
 		sim_free(&s);
 	}
 }
