@@ -210,14 +210,14 @@ Where the models hold and where they are too simple:
   ~26 µs a level). The profile used to have one mode (median 94 µs);
   it now has the page types around the datasheet's mean (below), as
   in the figure above (the drive there nearly empty).
-- **Micron, reads next to a writer that fsyncs:** in the model about a
-  fifth of the reads wait for a whole page program (p99 758 µs). The
-  drive delays about 2%, and a quarter of those by 1–3 ms (p99.9 2.7
-  ms). Its long waits scale with the data written, ~300 per GB whatever
-  the write pattern (4K or 128K, random or sequential, with or without
-  fsync), and last nearly a whole program operation of the TLC drive
-  (peak at 2.5–2.75 ms). So the drive suspends programs for reads,
-  except when the read arrives while the program's data is still
+- **Micron, reads next to a writer that fsyncs:** in the first profile
+  about a fifth of the reads waited for a whole page program (p99 758
+  µs). The drive delays about 2%, and a quarter of those by 1–3 ms
+  (p99.9 2.7 ms). Its long waits scale with the data written, ~300 per
+  GB whatever the write pattern (4K or 128K, random or sequential, with
+  or without fsync), and last nearly a whole program operation of the
+  TLC drive (peak at 2.5–2.75 ms). So the drive suspends programs for
+  reads, except when the read arrives while the program's data is still
   crossing the channel, and programs in ~2.7 ms operations, not the
   first profile's 656 µs pages.
 
@@ -263,7 +263,7 @@ over the whole drive, µs:
 Long waits now come five times as often per GB written, as garbage
 collection programs about five times the data; the model with the
 drive's structure gets closer over p50–p99.9 (mean |log ratio| 0.62
-against 0.70) but still has 2.2 times fewer long waits than the drive,
+against 0.70) but still has 1.8 times fewer long waits than the drive,
 so p95–p99 stay low. `micron-7300` now carries the measured structure
 around the datasheet's mean read (`tr_us 25`, `tr_step_us 26`: mean 60
 as before, `page_kb 64`, `tprog_us 2624`, `susp_us 20`); every

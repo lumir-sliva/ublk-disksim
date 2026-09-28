@@ -667,10 +667,10 @@ def draw_ssd_request(plt, src, out):
              ("die → controller", "#74b886"), ("host link", MODEL2),
              ("controller", MODEL)]
     names = [n for n in profs if n in spec]
-    fig = plt.figure(figsize=(10.5, 2.3 + 1.05 * len(names)))
+    fig = plt.figure(figsize=(10.5, 2.5 + 1.05 * len(names)))
     H = fig.get_figheight()
-    axes = [fig.add_axes([0.2, 0.55 / H, 0.44, 1 - 2.2 / H]),
-            fig.add_axes([0.72, 0.55 / H, 0.25, 1 - 2.2 / H])]
+    axes = [fig.add_axes([0.2, 0.55 / H, 0.44, 1 - 2.4 / H]),
+            fig.add_axes([0.72, 0.55 / H, 0.25, 1 - 2.4 / H])]
     for i, n in enumerate(names):
         p = profs[n]
         # mean over the TLC page types: tr_us + (0 + 1 + 3) / 3 steps
@@ -710,12 +710,14 @@ def draw_ssd_request(plt, src, out):
     h.append(Line2D([], [], color=REAL, lw=2.2))
     l.append("fitted to")
     fig.legend(h, l, loc="upper left", ncol=6, fontsize=9,
-               bbox_to_anchor=(0.2, 1 - 1.0 / H), handlelength=1.2, columnspacing=1.2)
+               bbox_to_anchor=(0.2, 1 - 1.2 / H), handlelength=1.2, columnspacing=1.2)
     headline(fig, "Where a 4K request's time goes in the ssd model",
              "Sums of the profile parameters (ssd_model.c), the same sums make "
              "check asserts; red: what each was fitted to\n"
              "(datasheets; the PM9A3 write: a published measurement). A host can't "
-             "show less than its floor (~16–35 µs per request).")
+             "show less than its floor (~16–35 µs per request).\n"
+             "The micron-7300 page read is the mean over its TLC page types "
+             "(25 / 51 / 103 µs).")
     save(plt, fig, out)
 
 
