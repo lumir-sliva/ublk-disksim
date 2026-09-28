@@ -36,9 +36,10 @@
  *    Full pages (page_kb) are programmed on whichever die is free first,
  *    as a log-structured drive does. A page of random writes costs `waf`
  *    program units instead of one: steady-state garbage collection folded
- *    into the page that caused it; writes continuing one of the last 8
- *    write streams count as sequential and cost one unit. A full buffer
- *    makes writes wait;
+ *    into the page that caused it. Writes continuing one of the last 8
+ *    write streams count as sequential and cost one unit, unless they
+ *    overwrite scattered chunks: freeing those needs the same copies. A
+ *    full buffer makes writes wait;
  *  - FLUSH: nothing is advertised with vwc = 0, so the kernel sends none.
  *    With plp = 1 the buffer is durable and a flush costs flush_us after
  *    it is issued; with plp = 0 the partly filled page is closed and the
@@ -233,10 +234,10 @@ static void close_open(struct ssd_model *m, __u64 ready)
 	pg = page(m, m->seq_next++);
 	pg->bytes = m->open_bytes;
 	pg->ready = ready;
-	pg->units = 1 + (m->p.waf - 1) * (double)m->open_rnd / m->open_bytes;
+	pg->units = 1 + (m->p.waf - 1) * (double)m->open_gc / m->open_bytes;
 	pg->end = 0;
 	pg->freed = 0;
-	m->open_bytes = m->open_rnd = 0;
+	m->open_bytes = m->open_gc = 0;
 }
 
 /*
@@ -274,25 +275,31 @@ static int classify(struct ssd_model *m, __u64 lba, __u64 nr, __u64 *run)
  * write and lies wholly within its contiguous run from `run` was written
  * in one piece; a chunk a random write covers only partly is scattered;
  * a stream's partly written chunk keeps its state until the write that
- * completes it.
+ * completes it. Returns the bytes whose space garbage collection has to
+ * free by copying: all of a random write, and the part of a sequential
+ * one that overwrites scattered data (freeing it frees no whole block).
  */
-static void mark_history(struct ssd_model *m, __u64 lba, __u64 nr,
-			 __u64 run, int rnd)
+static __u64 mark_history(struct ssd_model *m, __u64 lba, __u64 nr,
+			  __u64 run, int rnd)
 {
 	__u64 off = lba << 9, end = off + (nr << 9), pb = m->page_bytes, c;
+	__u64 gc = 0;
 
 	for (c = off / pb; c * pb < end; c++) {
+		if (rnd || hist_get(m, c))
+			gc += min_u64((c + 1) * pb, end) - max_u64(c * pb, off);
 		if (c * pb >= run << 9 && (c + 1) * pb <= end)
 			hist_set(m, c, 0);
 		else if (rnd)
 			hist_set(m, c, 1);
 	}
+	return gc;
 }
 
 /* write data enters the buffer at `a`; the write completes */
 static void admit(struct ssd_model *m, const struct ssd_req *r, __u64 a)
 {
-	__u64 left = r->nr << 9;
+	__u64 bytes = r->nr << 9, left = bytes;
 
 	m->buf_bytes += left;
 	m->dirty = 1;
@@ -300,8 +307,7 @@ static void admit(struct ssd_model *m, const struct ssd_req *r, __u64 a)
 		__u64 take = min_u64(left, m->page_bytes - m->open_bytes);
 
 		m->open_bytes += take;
-		if (r->rnd)
-			m->open_rnd += take;
+		m->open_gc += take * r->gc_bytes / bytes;
 		m->open_last = max_u64(m->open_last, a);
 		left -= take;
 		if (m->open_bytes == m->page_bytes)
@@ -559,7 +565,7 @@ static void do_write(struct ssd_model *m, struct ssd_req r)
 	r.link_end = link_reserve(m, r.t, m->cmd_ns +
 				  xfer_ns(m->p.iface_mbps, bytes));
 	r.rnd = classify(m, r.lba, r.nr, &run);
-	mark_history(m, r.lba, r.nr, run, r.rnd);
+	r.gc_bytes = mark_history(m, r.lba, r.nr, run, r.rnd);
 	if (r.rnd)
 		m->rnd_bytes += bytes;
 	else

@@ -32,11 +32,12 @@ struct ssd_params {
 struct ssd_req {
 	int tag;
 	__u8 op;			/* MODEL_* */
-	__u8 rnd;			/* random write, costs waf units per page */
+	__u8 rnd;			/* random write (not continuing a stream) */
 	__u64 lba, nr;			/* sectors */
 	__u64 arrive;			/* reached the model's host side */
 	__u64 t;			/* reached the model (later if held by a flush) */
 	__u64 link_end;			/* write: data is on the drive */
+	__u64 gc_bytes;			/* write: bytes GC must copy to free */
 };
 
 /* a closed buffer page waiting to be programmed or being programmed */
@@ -80,7 +81,7 @@ struct ssd_model {
 
 	/* write buffer: open page + closed pages [seq_head, seq_next) */
 	__u64 buf_bytes;
-	__u64 open_bytes, open_rnd, open_last;
+	__u64 open_bytes, open_gc, open_last;	/* open_gc: bytes needing GC */
 	struct ssd_page *pg;
 	__u64 cap_pg;			/* power of two */
 	__u64 seq_head;			/* oldest page not freed */

@@ -864,6 +864,20 @@ static void ssd_rates(void)
 	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 1, 3, &mbps);
 	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) / 1e9) / 1e6;
 	CHECK(fabs(mbps - want) / want < 0.05, "%.0f MB/s, expected %.0f", mbps, want);
+
+	cur_test = "ssd: sequential writes over scattered data pay waf";
+	p.history = 1;
+	/* 4 GiB at prog / waf takes ~8 s: the first 3 s are the first pass */
+	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 1, 3, &mbps);
+	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) * p.waf / 1e9) / 1e6;
+	CHECK(fabs(mbps - want) / want < 0.05, "first pass %.0f MB/s, expected "
+	      "dies x page / (unit x waf) = %.0f", mbps, want);
+
+	cur_test = "ssd: a sequential pass leaves the data whole: the next pass doesn't";
+	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 10, 2, &mbps);
+	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) / 1e9) / 1e6;
+	CHECK(fabs(mbps - want) / want < 0.05, "second pass %.0f MB/s, expected "
+	      "dies x page / unit = %.0f", mbps, want);
 }
 
 static void ssd_flushes(void)
