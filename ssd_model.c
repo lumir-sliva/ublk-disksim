@@ -37,8 +37,10 @@
  *    as a log-structured drive does. A page of random writes costs `waf`
  *    program units instead of one: steady-state garbage collection folded
  *    into the page that caused it. Writes continuing one of the last 8
- *    write streams count as sequential and cost one unit, unless they
- *    overwrite scattered chunks: freeing those needs the same copies. A
+ *    write streams count as sequential and cost 1 + (waf - 1) x the
+ *    scattered share of the whole device: freeing space on a drive whose
+ *    data random writes have scattered needs copies whatever the new data
+ *    is (on a fresh, sequentially written drive they cost one unit). A
  *    full buffer makes writes wait. With gc_mbps and gc_pool_mb, garbage
  *    collection also works ahead: while no page waits to be programmed
  *    it prepares erased space at gc_mbps, up to gc_pool_mb, and pages
@@ -107,12 +109,15 @@ static int hist_get(const struct ssd_model *m, __u64 c)
 
 static void hist_set(struct ssd_model *m, __u64 c, int v)
 {
-	if (c >= m->nchunk)
+	if (c >= m->nchunk || hist_get(m, c) == v)
 		return;
-	if (v)
+	if (v) {
 		m->hist[c >> 3] |= 1 << (c & 7);
-	else
+		m->nscat++;
+	} else {
 		m->hist[c >> 3] &= ~(1 << (c & 7));
+		m->nscat--;
+	}
 }
 
 /* complete request r at model time `when`, less the host floor */
@@ -304,18 +309,18 @@ static int classify(struct ssd_model *m, __u64 lba, __u64 nr, __u64 *run)
  * in one piece; a chunk a random write covers only partly is scattered;
  * a stream's partly written chunk keeps its state until the write that
  * completes it. Returns the bytes whose space garbage collection has to
- * free by copying: all of a random write, and the part of a sequential
- * one that overwrites scattered data (freeing it frees no whole block).
+ * free by copying: all of a random write; of a sequential one, the share
+ * of the device that is scattered (GC takes its victims from the whole
+ * drive, so it's the drive's state that counts, not the data overwritten).
  */
 static __u64 mark_history(struct ssd_model *m, __u64 lba, __u64 nr,
 			  __u64 run, int rnd)
 {
 	__u64 off = lba << 9, end = off + (nr << 9), pb = m->page_bytes, c;
-	__u64 gc = 0;
+	__u64 gc = rnd ? nr << 9 :
+		(__u64)((double)(nr << 9) * m->nscat / m->nchunk);
 
 	for (c = off / pb; c * pb < end; c++) {
-		if (rnd || hist_get(m, c))
-			gc += min_u64((c + 1) * pb, end) - max_u64(c * pb, off);
 		if (c * pb >= run << 9 && (c + 1) * pb <= end)
 			hist_set(m, c, 0);
 		else if (rnd)
@@ -758,8 +763,10 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
 	hist_bytes = (m->nchunk + 7) / 8;
 	m->hist = calloc(hist_bytes ? hist_bytes : 1, 1);
 	assert(m->hist);
-	if (p->history)
+	if (p->history) {
 		memset(m->hist, 0xff, hist_bytes);
+		m->nscat = m->nchunk;
+	}
 	m->tr_ns = (__u64)(p->tr_us * 1e3);
 	m->tr_step_ns = (__u64)(p->tr_step_us * 1e3);
 	m->cmd_ns = (__u64)(p->cmd_us * 1e3);

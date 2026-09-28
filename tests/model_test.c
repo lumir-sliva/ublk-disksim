@@ -866,20 +866,53 @@ static void ssd_rates(void)
 	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 1, 3, &mbps);
 	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) / 1e9) / 1e6;
 	CHECK(fabs(mbps - want) / want < 0.05, "%.0f MB/s, expected %.0f", mbps, want);
+}
 
-	cur_test = "ssd: sequential writes over scattered data pay waf";
+/* MB/s of 128K sequential writes at QD32 over [lo, hi) for secs, on s */
+static double ssd_seq_write_mbps(struct sim *s, __u64 lo, __u64 hi, int secs)
+{
+	struct job j = { .op = MODEL_WRITE, .pattern = SEQ, .qd = 32, .nr = 256,
+			 .lo = lo, .hi = hi };
+
+	j.measure_from = s->now + SEC / 2;
+	j.stop_at = j.measure_from + secs * SEC;
+	job_start(s, &j);
+	sim_run_until(s, j.stop_at);
+	sim_drain(s, s->now + 60 * SEC);
+	return j.bytes / 1e6 / secs;
+}
+
+static void ssd_seq_over_scattered(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	double prog, want, first, mbps, g;
+	__u64 range = 64ULL << 11;	/* 64 MiB */
+	struct sim s;
+
+	/* program rate of sequential writes paying waf on a share g */
+	prog = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) / 1e9) / 1e6;
 	p.history = 1;
-	/* 4 GiB at prog / waf takes ~8 s: the first 3 s are the first pass */
-	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 1, 3, &mbps);
-	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) * p.waf / 1e9) / 1e6;
-	CHECK(fabs(mbps - want) / want < 0.05, "first pass %.0f MB/s, expected "
-	      "dies x page / (unit x waf) = %.0f", mbps, want);
+	ssd_up(&s, &p, 128);
 
-	cur_test = "ssd: a sequential pass leaves the data whole: the next pass doesn't";
-	ssd_run(&p, 128, MODEL_WRITE, SEQ, 256, 32, 10, 2, &mbps);
-	want = p.dies * (p.page_kb << 10) / (ssd_unit_ns(&p) / 1e9) / 1e6;
-	CHECK(fabs(mbps - want) / want < 0.05, "second pass %.0f MB/s, expected "
-	      "dies x page / unit = %.0f", mbps, want);
+	cur_test = "ssd: on a scattered drive sequential writes pay waf";
+	g = 1 - (double)range / SSD_SECTORS;	/* after one pass over the range */
+	first = ssd_seq_write_mbps(&s, 0, range, 2);
+	want = prog / (1 + (p.waf - 1) * g);
+	CHECK(fabs(first - want) / want < 0.05, "%.0f MB/s, expected dies x page "
+	      "/ (unit x (1 + (waf - 1) x %.3f)) = %.0f", first, g, want);
+
+	cur_test = "ssd: rewriting a range doesn't make it cheap: the drive's share counts";
+	mbps = ssd_seq_write_mbps(&s, 0, range, 2);
+	CHECK(fabs(mbps - first) / first < 0.03, "second pass %.0f MB/s, first %.0f",
+	      mbps, first);
+
+	cur_test = "ssd: half the drive rewritten sequentially: they pay half";
+	ssd_seq_write_mbps(&s, SSD_SECTORS / 2, SSD_SECTORS, 8);
+	mbps = ssd_seq_write_mbps(&s, 0, range, 2);
+	want = prog / (1 + (p.waf - 1) * (0.5 - (double)range / SSD_SECTORS));
+	CHECK(fabs(mbps - want) / want < 0.05, "%.0f MB/s, expected %.0f", mbps,
+	      want);
+	sim_free(&s);
 }
 
 static void ssd_flushes(void)
@@ -1432,6 +1465,7 @@ int main(int argc, char **argv)
 	ssd_qd1_costs();
 	ssd_die_parallelism();
 	ssd_rates();
+	ssd_seq_over_scattered();
 	ssd_flushes();
 	ssd_suspend();
 	ssd_read_levels();

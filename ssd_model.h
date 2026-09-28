@@ -104,7 +104,7 @@ struct ssd_model {
 	 * flash), 0 = written sequentially in one piece.
 	 */
 	__u8 *hist;
-	__u64 nchunk;
+	__u64 nchunk, nscat;		/* chunks, of them scattered */
 
 	/*
 	 * Erased space garbage collection has prepared while no program was
