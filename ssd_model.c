@@ -22,6 +22,13 @@
  *    wait for the resumed program; buffer space is freed at the page's
  *    unsuspended end. Channels are not a shared resource: their total
  *    rate is above the host link on the drives this was fitted to;
+ *  - write history: each page_kb chunk of the device remembers whether
+ *    it was last written in one piece (a write or a sequential stream
+ *    that covered it) or by random writes, which scatter its 4K pieces
+ *    over the flash. A read of a scattered chunk is one page read per
+ *    4K, each on its own die; `history` 1 starts with every chunk
+ *    scattered (a drive preconditioned with random writes), 0 (default)
+ *    with all written in one piece;
  *  - one host link: each command occupies it for cmd_us plus its data at
  *    iface_mbps (reads after the flash read, writes on arrival), then
  *    iface_us of controller latency until completion;
@@ -47,10 +54,9 @@
  *
  * Not modelled: garbage collection as a process (idle-time GC, fill level,
  * over-provisioning; on a full drive sequential writes pay for it too),
- * write history (after 4K random writes a large read needs a page read
- * per scattered 4K), SLC caching, erase suspend, a limit on suspends per
- * program, reads served from the write buffer, mapping-table cache misses,
- * TRIM, thermal throttling, multiple NVMe queues. Calibrate against the
+ * SLC caching, erase suspend, a limit on suspends per program, reads
+ * served from the write buffer, mapping-table cache misses, TRIM,
+ * thermal throttling, multiple NVMe queues. Calibrate against the
  * drive you want to imitate before trusting absolute numbers.
  *
  * No clock and no I/O of its own: time, completions and wake-ups go
@@ -77,6 +83,31 @@ static __u64 min_u64(__u64 a, __u64 b)
 static __u64 xfer_ns(double mbps, __u64 bytes)
 {
 	return (__u64)((double)bytes / (mbps * 1e6) * 1e9);
+}
+
+/* splitmix64 finalizer: a fixed, well-spread hash of a 4K index */
+static __u64 mix64(__u64 k)
+{
+	k *= 0x9e3779b97f4a7c15ULL;
+	k = (k ^ (k >> 30)) * 0xbf58476d1ce4e5b9ULL;
+	k = (k ^ (k >> 27)) * 0x94d049bb133111ebULL;
+	return k ^ (k >> 31);
+}
+
+/* write history of chunk c: 1 = scattered by random writes */
+static int hist_get(const struct ssd_model *m, __u64 c)
+{
+	return c < m->nchunk && (m->hist[c >> 3] >> (c & 7) & 1);
+}
+
+static void hist_set(struct ssd_model *m, __u64 c, int v)
+{
+	if (c >= m->nchunk)
+		return;
+	if (v)
+		m->hist[c >> 3] |= 1 << (c & 7);
+	else
+		m->hist[c >> 3] &= ~(1 << (c & 7));
 }
 
 /* complete request r at model time `when`, less the host floor */
@@ -208,24 +239,54 @@ static void close_open(struct ssd_model *m, __u64 ready)
 	m->open_bytes = m->open_rnd = 0;
 }
 
-/* sequential if it continues one of the recent write streams */
-static int classify(struct ssd_model *m, __u64 lba, __u64 nr)
+/*
+ * Sequential if it continues one of the recent write streams (the
+ * longest, if several end here). *run is where the write's contiguous
+ * run began: the stream's start, or its own lba for a new stream.
+ */
+static int classify(struct ssd_model *m, __u64 lba, __u64 nr, __u64 *run)
 {
-	int i, lru = 0;
+	int i, lru = 0, hit = -1;
 
 	m->stream_clock++;
 	for (i = 0; i < SSD_NSTREAMS; i++) {
-		if (m->stream_end[i] == lba && m->stream_use[i]) {
-			m->stream_end[i] = lba + nr;
-			m->stream_use[i] = m->stream_clock;
-			return 0;
-		}
+		if (m->stream_end[i] == lba && m->stream_use[i] &&
+		    (hit < 0 || m->stream_start[i] < m->stream_start[hit]))
+			hit = i;
 		if (m->stream_use[i] < m->stream_use[lru])
 			lru = i;
 	}
+	if (hit >= 0) {
+		m->stream_end[hit] = lba + nr;
+		m->stream_use[hit] = m->stream_clock;
+		*run = m->stream_start[hit];
+		return 0;
+	}
 	m->stream_end[lru] = lba + nr;
+	m->stream_start[lru] = lba;
 	m->stream_use[lru] = m->stream_clock;
+	*run = lba;
 	return 1;
+}
+
+/*
+ * Record how [lba, lba + nr) was written. A chunk that ends inside the
+ * write and lies wholly within its contiguous run from `run` was written
+ * in one piece; a chunk a random write covers only partly is scattered;
+ * a stream's partly written chunk keeps its state until the write that
+ * completes it.
+ */
+static void mark_history(struct ssd_model *m, __u64 lba, __u64 nr,
+			 __u64 run, int rnd)
+{
+	__u64 off = lba << 9, end = off + (nr << 9), pb = m->page_bytes, c;
+
+	for (c = off / pb; c * pb < end; c++) {
+		if (c * pb >= run << 9 && (c + 1) * pb <= end)
+			hist_set(m, c, 0);
+		else if (rnd)
+			hist_set(m, c, 1);
+	}
 }
 
 /* write data enters the buffer at `a`; the write completes */
@@ -435,15 +496,23 @@ static __u64 read_levels_ns(struct ssd_model *m, __u64 s0, __u64 e0)
 	if (!m->tr_step_ns)
 		return 0;
 	for (k = s0 >> 12; k << 12 < e0 && most < 3; k++) {
-		__u64 h = k * 0x9e3779b97f4a7c15ULL;	/* splitmix64 */
+		__u64 h = mix64(k);
 
-		h = (h ^ (h >> 30)) * 0xbf58476d1ce4e5b9ULL;
-		h = (h ^ (h >> 27)) * 0x94d049bb133111ebULL;
-		h ^= h >> 31;
 		if (extra[h % 3] > most)
 			most = extra[h % 3];
 	}
 	return most * m->tr_step_ns;
+}
+
+/* one page read of `len` die time on die d, for a read arriving at t */
+static void read_piece(struct ssd_model *m, unsigned d, __u64 t, __u64 len,
+		       __u64 *wait, __u64 *fdone)
+{
+	__u64 s = die_read(m, d, t, len);
+
+	if (s - t > *wait)
+		*wait = s - t;
+	*fdone = max_u64(*fdone, s + len);
 }
 
 static void do_read(struct ssd_model *m, const struct ssd_req *r)
@@ -455,13 +524,23 @@ static void do_read(struct ssd_model *m, const struct ssd_req *r)
 	for (p = off / m->page_bytes; p * m->page_bytes < end; p++) {
 		__u64 s0 = max_u64(p * m->page_bytes, off);
 		__u64 e0 = min_u64((p + 1) * m->page_bytes, end);
-		__u64 len = m->tr_ns + read_levels_ns(m, s0, e0) +
-			xfer_ns(m->p.ch_mbps, e0 - s0);
-		__u64 s = die_read(m, p % m->p.dies, r->t, len);
+		__u64 k;
 
-		if (s - r->t > wait)
-			wait = s - r->t;
-		fdone = max_u64(fdone, s + len);
+		if (!hist_get(m, p)) {
+			read_piece(m, p % m->p.dies, r->t, m->tr_ns +
+				   read_levels_ns(m, s0, e0) +
+				   xfer_ns(m->p.ch_mbps, e0 - s0), &wait, &fdone);
+			continue;
+		}
+		/* scattered: each 4K is a page read of its own, on its own die */
+		for (k = s0 >> 12; k << 12 < e0; k++) {
+			__u64 a = max_u64(k << 12, s0), b = min_u64((k + 1) << 12, e0);
+
+			read_piece(m, (mix64(k) >> 32) % m->p.dies, r->t, m->tr_ns +
+				   read_levels_ns(m, a, b) +
+				   xfer_ns(m->p.ch_mbps, b - a), &wait, &fdone);
+			m->n_frag_reads++;
+		}
 	}
 	if (wait) {
 		m->n_read_wait++;
@@ -474,12 +553,13 @@ static void do_read(struct ssd_model *m, const struct ssd_req *r)
 
 static void do_write(struct ssd_model *m, struct ssd_req r)
 {
-	__u64 bytes = r.nr << 9;
+	__u64 bytes = r.nr << 9, run;
 
 	m->n_write++;
 	r.link_end = link_reserve(m, r.t, m->cmd_ns +
 				  xfer_ns(m->p.iface_mbps, bytes));
-	r.rnd = classify(m, r.lba, r.nr);
+	r.rnd = classify(m, r.lba, r.nr, &run);
+	mark_history(m, r.lba, r.nr, run, r.rnd);
 	if (r.rnd)
 		m->rnd_bytes += bytes;
 	else
@@ -619,7 +699,7 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	    p->tprog_us <= 0 || p->ch_mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
 	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
-	    p->tr_step_us < 0 ||
+	    p->tr_step_us < 0 || p->history > 1 ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -627,10 +707,11 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	return 0;
 }
 
-struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
-				const struct model_env *env)
+struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
+				unsigned depth, const struct model_env *env)
 {
 	struct ssd_model *m = calloc(1, sizeof(*m));
+	__u64 hist_bytes;
 
 	assert(m);
 	m->p = *p;
@@ -638,6 +719,12 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
 	m->depth = depth;
 	m->page_bytes = (__u64)p->page_kb << 10;
 	m->buf_cap = (__u64)p->buf_mb << 20;
+	m->nchunk = ((sectors << 9) + m->page_bytes - 1) / m->page_bytes;
+	hist_bytes = (m->nchunk + 7) / 8;
+	m->hist = calloc(hist_bytes ? hist_bytes : 1, 1);
+	assert(m->hist);
+	if (p->history)
+		memset(m->hist, 0xff, hist_bytes);
 	m->tr_ns = (__u64)(p->tr_us * 1e3);
 	m->tr_step_ns = (__u64)(p->tr_step_us * 1e3);
 	m->cmd_ns = (__u64)(p->cmd_us * 1e3);
@@ -682,6 +769,7 @@ void ssd_model_free(struct ssd_model *m)
 	free(m->held);
 	free(m->spare);
 	free(m->nflush);
+	free(m->hist);
 	free(m);
 }
 
@@ -709,7 +797,7 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		"program_units %.1f\nbuffer_full_waits %llu\n"
 		"blocked_by_flush %llu\nblocked_ms_sum %.3f\n"
 		"read_die_waits %llu\nread_die_wait_ms_sum %.3f\n"
-		"read_suspends %llu\nbuffer_mb %.3f\n",
+		"read_suspends %llu\nfragment_reads %llu\nbuffer_mb %.3f\n",
 		(unsigned long long)m->n_read, (unsigned long long)m->n_write,
 		(unsigned long long)m->n_flush, m->flush_ns_sum / 1e6,
 		m->flush_ns_max / 1e6, m->seq_bytes / 1048576.0,
@@ -717,5 +805,6 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		(unsigned long long)m->n_buf_full,
 		(unsigned long long)m->n_blocked, m->blocked_ns_sum / 1e6,
 		(unsigned long long)m->n_read_wait, m->read_wait_ns_sum / 1e6,
-		(unsigned long long)m->n_read_susp, m->buf_bytes / 1048576.0);
+		(unsigned long long)m->n_read_susp,
+		(unsigned long long)m->n_frag_reads, m->buf_bytes / 1048576.0);
 }

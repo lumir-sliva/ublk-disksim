@@ -24,6 +24,7 @@ struct ssd_params {
 	unsigned	vwc;		/* advertise a volatile write cache */
 	double		flush_us;	/* FLUSH cost once drained */
 	double		susp_us;	/* program suspend for a read, 0: none */
+	unsigned	history;	/* 1: data at start scattered (random) */
 	double		floor_us;	/* host overhead to subtract */
 	char		stats[256];	/* stats file, rewritten once a second */
 };
@@ -90,8 +91,17 @@ struct ssd_model {
 	__u64 *heap;			/* fully started pages, min-heap on end */
 	__u64 nheap;
 
-	/* write stream ends, for sequential detection */
-	__u64 stream_end[SSD_NSTREAMS], stream_use[SSD_NSTREAMS], stream_clock;
+	/* write streams, for sequential detection: end, start, last use */
+	__u64 stream_end[SSD_NSTREAMS], stream_start[SSD_NSTREAMS];
+	__u64 stream_use[SSD_NSTREAMS], stream_clock;
+
+	/*
+	 * Write history, one bit per page_kb chunk of the device: 1 = last
+	 * written by random writes (its 4K pieces are scattered over the
+	 * flash), 0 = written sequentially in one piece.
+	 */
+	__u8 *hist;
+	__u64 nchunk;
 
 	struct ssd_req *wait;		/* writes waiting for buffer space, FIFO */
 	int nwait;
@@ -113,7 +123,7 @@ struct ssd_model {
 
 	/* stats */
 	__u64 n_read, n_write, n_flush, n_buf_full, n_blocked, n_read_wait;
-	__u64 n_read_susp;
+	__u64 n_read_susp, n_frag_reads;
 	__u64 seq_bytes, rnd_bytes;
 	double units_done;
 	__u64 flush_ns_sum, flush_ns_max, blocked_ns_sum, read_wait_ns_sum;
@@ -127,8 +137,8 @@ const struct ssd_params *ssd_profile(const char *name);
  */
 int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 		     unsigned depth);
-struct ssd_model *ssd_model_new(const struct ssd_params *p, unsigned depth,
-				const struct model_env *env);
+struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
+				unsigned depth, const struct model_env *env);
 void ssd_model_free(struct ssd_model *m);
 /* a request arrives now; tags are < depth and unique while in flight */
 void ssd_model_submit(struct ssd_model *m, int tag, int op, __u64 lba,

@@ -715,7 +715,7 @@ static void ssd_up(struct sim *s, const struct ssd_params *p, unsigned depth)
 
 	sim_init(s, depth);
 	e = sim_env(s);
-	s->s = ssd_model_new(p, depth, &e);
+	s->s = ssd_model_new(p, SSD_SECTORS, depth, &e);
 }
 
 /* documented cost of a QD1 4K read and write, ns */
@@ -1166,6 +1166,82 @@ static void ssd_read_levels(void)
 	sim_free(&s);
 }
 
+/* latency of a read of [lba, lba + nr) once earlier programs are done */
+static double ssd_quiet_read(struct sim *s, __u64 lba, __u64 nr)
+{
+	int tag;
+
+	sim_run_until(s, s->now + 100 * MS);
+	tag = sim_submit(s, MODEL_READ, lba, nr, NULL);
+	sim_drain(s, s->now + SEC);
+	return s->rq[tag].done_at - s->rq[tag].sub;
+}
+
+static void ssd_write_now(struct sim *s, __u64 lba, __u64 nr)
+{
+	sim_submit(s, MODEL_WRITE, lba, nr, NULL);
+	sim_drain(s, s->now + SEC);
+}
+
+static void ssd_history(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	__u64 c = 128 * 20, i;		/* 64 KiB chunk number 20 */
+	double whole, frags, lat;
+	struct sim s;
+
+	/* one die and no read levels: every cost is a plain sum */
+	p.dies = 1;
+	p.page_kb = 64;
+	p.tr_step_us = 0;
+	whole = (p.tr_us + p.cmd_us + p.iface_us) * 1e3 +
+		xfer_ns_of(p.ch_mbps, 65536) + xfer_ns_of(p.iface_mbps, 65536);
+	frags = 16 * (p.tr_us * 1e3 + xfer_ns_of(p.ch_mbps, 4096)) +
+		(p.cmd_us + p.iface_us) * 1e3 + xfer_ns_of(p.iface_mbps, 65536);
+
+	cur_test = "ssd: a chunk written in one piece reads as one page";
+	ssd_up(&s, &p, 32);
+	lat = ssd_quiet_read(&s, c, 128);
+	CHECK(fabs(lat - whole) < 5, "64K read %.3f us, one page read %.3f us",
+	      lat / 1e3, whole / 1e3);
+
+	cur_test = "ssd: a 4K random write scatters its chunk: 16 page reads";
+	ssd_write_now(&s, c + 40, 8);
+	lat = ssd_quiet_read(&s, c, 128);
+	CHECK(fabs(lat - frags) < 20, "64K read %.3f us, 16 x 4K page reads %.3f us",
+	      lat / 1e3, frags / 1e3);
+
+	cur_test = "ssd: a write covering the chunk puts it in one piece";
+	ssd_write_now(&s, c, 128);
+	lat = ssd_quiet_read(&s, c, 128);
+	CHECK(fabs(lat - whole) < 5, "64K read %.3f us, one page read %.3f us",
+	      lat / 1e3, whole / 1e3);
+
+	cur_test = "ssd: a sequential stream puts a chunk in one piece when it completes it";
+	ssd_write_now(&s, c + 120, 8);	/* scatter it again */
+	for (i = 0; i < 16; i++) {
+		ssd_write_now(&s, c + 8 * i, 8);
+		if (i == 7) {
+			lat = ssd_quiet_read(&s, c, 128);
+			CHECK(fabs(lat - frags) < 20, "half written by the stream: "
+			      "%.3f us, still 16 page reads %.3f us", lat / 1e3,
+			      frags / 1e3);
+		}
+	}
+	lat = ssd_quiet_read(&s, c, 128);
+	CHECK(fabs(lat - whole) < 5, "completed by the stream: %.3f us, one "
+	      "page read %.3f us", lat / 1e3, whole / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: history rnd starts with every chunk scattered";
+	p.history = 1;
+	ssd_up(&s, &p, 32);
+	lat = ssd_quiet_read(&s, c, 128);
+	CHECK(fabs(lat - frags) < 20, "64K read %.3f us, 16 x 4K page reads %.3f us",
+	      lat / 1e3, frags / 1e3);
+	sim_free(&s);
+}
+
 /* ---- randomized invariants --------------------------------------- */
 
 static void random_workload(struct sim *s, __u64 max_nr, int flushes,
@@ -1255,6 +1331,7 @@ static void ssd_random(int runs)
 		p.floor_us = rnd_below(2) ? 0 : 20;
 		p.susp_us = rnd_below(2) ? 0 : 20;
 		p.tr_step_us = rnd_below(2) ? 0 : 26;
+		p.history = rnd_below(2);
 		p.cmd_us = p.nvme ? (rnd_below(2) ? 0 : 0.56) : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
@@ -1282,6 +1359,7 @@ int main(int argc, char **argv)
 	ssd_flushes();
 	ssd_suspend();
 	ssd_read_levels();
+	ssd_history();
 	hdd_random(runs);
 	ssd_random(runs);
 
