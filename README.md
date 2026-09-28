@@ -148,6 +148,15 @@ What it models (see the header of `ssd_model.c`):
   once the page has reached the die (before that, it and the reads
   behind it wait for the whole program); the program resumes after the
   read;
+- write history: each `page_kb` chunk of the device remembers whether it
+  was last written in one piece (by one write or a sequential stream
+  that covered it) or scattered by random writes. A read of a scattered
+  chunk is one page read per 4K, each on its own die: on the real Micron
+  a 128K read takes 245 µs on data written sequentially and 522 µs on
+  data random writes have scattered (the model: 253 / 284 µs, too
+  cheap; docs/VALIDATION.md). `--history rnd` starts with every chunk
+  scattered (a drive preconditioned with random writes), `seq`
+  (default) whole;
 - a host link (`iface_mbps`, plus `cmd_us` of link time per command; on
   SATA that command rate caps 4K random reads near 100K IOPS, on
   `micron-7300` at the datasheet's ~520K, `nvme-plp` sets it to 0) and a
@@ -155,7 +164,16 @@ What it models (see the header of `ssd_model.c`):
 - a write buffer: writes complete once buffered; full pages are
   programmed on whichever die is free first. Steady-state garbage
   collection is folded in: a page of random writes costs `waf` program
-  units, a page of writes continuing a recent stream costs one;
+  units, a page of writes continuing a recent stream costs 1 + (`waf` −
+  1) × the scattered share of the whole device (garbage collection takes
+  its victims from the whole drive: after random preconditioning the
+  real Micron writes sequentially at ~300 MB/s instead of 1550).
+  With `--gc_mbps` and `--gc_pool_mb` garbage collection also works
+  ahead: once no page has waited to be programmed for `--gc_idle_s`, it
+  prepares erased space at that rate, up to that size, and writes needing
+  garbage collection use it first at one unit per page (off in every
+  profile; fitted to the real Micron: `--gc_pool_mb 41000 --gc_mbps 400
+  --gc_idle_s 58`);
 - FLUSH: with power-loss protection (`--plp 1`) the buffer is durable and
   a flush costs `flush_us`; without it the flush waits until everything
   buffered is programmed, plus `flush_us`. A flush with nothing written
@@ -166,12 +184,10 @@ What it models (see the header of `ssd_model.c`):
 - `--floor_us`: the host's own ublk overhead, subtracted from every
   completion so that the parameters are device latencies (docs/GUIDE.md).
 
-Not modelled: garbage collection as a process (idle-time GC, fill level;
-on a full drive sequential writes also pay for it), write history (after
-4K random writes a large read touches many pages: on the real Micron a
-128K read takes 379 µs instead of 247), SLC caching, erase suspend and
-limits on program suspends, reads from the write buffer, mapping table
-misses, TRIM, multiple NVMe queues.
+Not modelled: the rest of garbage collection as a process (fill level,
+the write cliff of a fresh drive, idle GC taking die time), SLC caching,
+erase suspend and limits on program suspends, reads from the write
+buffer, mapping table misses, TRIM, multiple NVMe queues.
 
 | option | meaning | `sata-plp` | `nvme-plp` | `sata-consumer` | `micron-7300` |
 |---|---|---|---|---|---|
@@ -193,6 +209,10 @@ misses, TRIM, multiple NVMe queues.
 | `--vwc` | advertise a volatile write cache | 1 | 0 | 1 | 0 |
 | `--flush_us` | flush cost once drained | 15 | 0 | 3200 | 0 |
 | `--floor_us` | host overhead to subtract | 0 | 0 | 0 | 0 |
+| `--history` | data at start: `seq` written in one piece, `rnd` scattered | seq | seq | seq | seq |
+| `--gc_pool_mb` | erased space garbage collection prepares while idle (0: none) | 0 | 0 | 0 | 0 |
+| `--gc_mbps` | rate it prepares it at | 0 | 0 | 0 | 0 |
+| `--gc_idle_s` | idle time before it starts | 0 | 0 | 0 | 0 |
 | `--stats` | file rewritten once a second with model counters | | | | |
 
 The profiles follow datasheets: Samsung PM883 960 GB (`sata-plp`),

@@ -259,7 +259,10 @@ free with power-loss protection, milliseconds without it.
 | `blocked_by_flush`, `blocked_ms_sum` | requests held back by a SATA flush |
 | `read_die_waits`, `read_die_wait_ms_sum` | reads that found their die busy (another read or a program) |
 | `read_suspends` | page reads served inside a program suspension (`susp_us` > 0) |
+| `fragment_reads` | 4K page reads done for scattered chunks (one per 4K, not per request) |
 | `buffer_mb` | data in the write buffer right now |
+| `gc_pool_mb` | erased space garbage collection has ready, as of the last page closed |
+| `gc_pool_used_mb` | garbage collection the pool has covered so far (in page bytes) |
 
 **Calibrate:**
 
@@ -280,6 +283,27 @@ to a fsyncing writer. Latencies are fio's submission to completion
 `bench/figures.py` turns into the figures in `docs/img/` (see its
 README there).
 
+**The drive's state.** The profiles are a full drive in steady state
+whose data was written sequentially, as datasheets measure it. Two
+things change that on a real drive, and each has an option:
+
+- how the data was written: after random writes a range's 4K pieces
+  are scattered over the flash, and large reads of it take many page
+  reads; and the more of the drive is scattered, the more garbage
+  collection even sequential writes pay. `--history rnd` starts the
+  device that way (a drive preconditioned with 4K random writes); the
+  model then tracks it as your workload writes (a sequential pass puts
+  a range back in one piece);
+- idle time: a drive prepares erased space when it has nothing to do,
+  and writes after a pause run faster until that is used up.
+  `--gc_mbps`, `--gc_pool_mb` and `--gc_idle_s` turn that on; off in
+  every profile, so that results don't depend on the pauses in a
+  benchmark. Fitted to the Micron 7300 PRO (it starts after ~58 s idle,
+  refills at ~400 MB/s up to ~43 GB): `--gc_pool_mb 41000 --gc_mbps 400
+  --gc_idle_s 58`. To measure a drive: fill it with random writes until the rate
+  settles, pause for a range of times, and count the bytes each burst
+  of random writes after the pause writes above the settled rate.
+
 To imitate another SSD: from the spec sheet, fit `iface_us` to the QD1
 write latency, `tr_us` to the QD1 read latency, `cmd_us` to the peak
 random read IOPS (1 / IOPS − 4 KiB / `iface_mbps`; SATA: QD32, NVMe:
@@ -296,9 +320,12 @@ and override what differs (kublk takes at most 15 target options), then
 add a profile to `profiles[]` in `ssd_model.c` and its expected values
 to `bench/expect/<profile>.tsv`.
 
-Limits: a first-order model. No garbage collection as a process (the
-`waf` factor charges it to the writes that cause it, at steady state),
-no SLC cache, program suspend only with `--susp_us` (0 in every profile
-but `micron-7300`: a read behind a program waits for it) and with no
-limit on suspends per program, no reads from the write buffer, one model thread (~190K 4K IOPS and
-~4 GB/s on a current server, below NVMe drives' peak).
+Limits: a first-order model. Garbage collection is the `waf` factor
+charged to the writes that need it, plus the optional idle pool: no
+fill level, no write cliff of a fresh drive, and the pool's refill
+takes no die time. No SLC cache, program suspend only with `--susp_us`
+(0 in every profile but `micron-7300`: a read behind a program waits
+for it) and with no limit on suspends per program, no reads from the
+write buffer, no write IOPS limit below the program rate, one model
+thread (~190K 4K IOPS and ~4 GB/s on a current server, below NVMe
+drives' peak).

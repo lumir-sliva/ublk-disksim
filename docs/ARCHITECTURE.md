@@ -175,6 +175,16 @@ Dies, a host link, a write buffer.
   is freed at the page's unsuspended end.
   Channels are not a separate resource: their total rate is above the
   host link on the modelled drives.
+- **Write history:** one bit per `page_kb` chunk of the device (7 MB
+  for 3.84 TB in 64 KiB chunks): written in one piece, or scattered. A
+  write marks 0 each chunk that lies wholly inside its contiguous run
+  (the write itself, or the stream it continues from the stream's
+  start) and ends inside it; a random write marks 1 the chunks it covers
+  only partly; a stream leaves a partly written chunk as it is until
+  the write that completes it. A read of a whole chunk is one page read
+  on die = chunk mod `dies`; of a scattered one, one page read per 4K on
+  die = a hash of the 4K's index, each with its own read levels. When
+  several streams end where a write starts, it continues the longest.
 - **Host link:** a list of busy intervals. Each command takes the
   earliest gap at or after its ready time, for `cmd_us` plus its bytes
   at `iface_mbps`, then `iface_us` of controller latency. Reads use the
@@ -182,11 +192,19 @@ Dies, a host link, a write buffer.
   gap list and not a single free time.
 - **Write buffer:** writes complete once their data is buffered. Full
   pages are programmed on whichever die is free first (log-structured).
-  A page costs `1 + (waf − 1) × random fraction` program units: writes
-  that continue one of the last 8 write streams are sequential, the rest
-  random, and steady-state garbage collection is charged to the random
-  ones. Units start lazily, when a die is free, so reads interleave with
-  programs. A full buffer makes writes wait.
+  A page costs `1 + (waf − 1) × g` program units, g = the share of its
+  bytes that need garbage collection: all of a random write (not
+  continuing one of the last 8 write streams); of a sequential one, the
+  scattered share of the whole device (scattered chunks / chunks,
+  counted as the history changes), since garbage collection takes its
+  victims from the whole drive. Units start lazily, when a die is free,
+  so reads interleave with programs. A full buffer makes writes wait.
+- **GC pool** (`gc_mbps`, `gc_pool_mb`; off by default): erased space
+  garbage collection prepared ahead. It grows at `gc_mbps` whenever no
+  page waits to be programmed, from `gc_idle_s` after the dies finished
+  the last one, up to `gc_pool_mb`; computed lazily when the next page closes. The
+  GC bytes of a page come out of it first, so a page covered by it
+  costs one unit. The refill takes no die time.
 - **FLUSH:** with `plp 1` the buffer is durable and a flush costs
   `flush_us`. With `plp 0` the partly filled page is closed and the flush
   waits until every buffered page is programmed, plus `flush_us`. A flush
@@ -206,9 +224,9 @@ model call, over random parameters and workloads:
   `dirty_bytes` = its extents + the write-back in progress ≤ the cache;
   when a flush completes, nothing written before it is still in the cache
   or waiting for it;
-- ssd: `buf_bytes` = the open page + the unfreed pages ≤ the buffer; a
-  SATA flush without PLP completes only once every page before it has
-  been programmed;
+- ssd: `buf_bytes` = the open page + the unfreed pages ≤ the buffer; the
+  GC pool stays within 0 … `gc_pool_mb`; a SATA flush without PLP
+  completes only once every page before it has been programmed;
 - a read never waits longer than the age limit plus the operations that
   can precede it (hdd, without flushes).
 

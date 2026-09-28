@@ -52,6 +52,9 @@ unit:
 | ssd | SATA QD32 reads; NVMe QD64 reads with `cmd_us` | 1 / (`cmd_us` + 4K / link), ±3% |
 | ssd | steady random writes | dies × page / (unit × `waf`), ±5% |
 | ssd | sequential writes | min(link, dies × page / unit), ±5% (SATA and NVMe) |
+| ssd | write history | a chunk written in one piece reads as one page; a 4K random write into it makes it 16 page reads (one die: exact sums); a covering write or a completed stream restores it, a half-written stream doesn't; `history rnd` starts scattered |
+| ssd | sequential writes over scattered data | on a fully scattered drive dies × page / (unit × `waf`); a second pass over the same range no faster; with half the drive rewritten sequentially dies × page / (unit × (1 + (`waf` − 1) / 2)), ±5% |
+| ssd | GC pool | after 1 s idle, 64 MiB of random writes cost (pool + rest × `waf`) / page program units, ±3%; the pool stops at `gc_pool_mb`, fills only after `gc_idle_s`; none without `gc_mbps` |
 | ssd | FLUSH | PLP: `flush_us`; nothing written since the last: free; no PLP: one page program + `flush_us` |
 | ssd | SATA vs NVMe FLUSH | SATA holds a read behind it; NVMe doesn't |
 | ssd | `vwc 0` | FLUSH does nothing |
@@ -60,7 +63,8 @@ unit:
 **Randomized tests:** 100 hdd and 100 ssd runs with random parameters
 (cache size, NCQ window, rpm, age limit, write-back window; SATA/NVMe,
 PLP, VWC, dies, page
-size, buffer, WAF, floor, program suspend, TLC read levels) and random workloads (reads, writes, flushes,
+size, buffer, WAF, floor, program suspend, TLC read levels, history,
+GC pool, NVMe `cmd_us`) and random workloads (reads, writes, flushes,
 sizes up to 1 MiB, partly sequential, random gaps between arrivals, at
 most a queue depth in flight). The simulator advances the clock to each
 arrival before delivering the events due by then, so these runs mostly
@@ -74,9 +78,10 @@ call they check:
   plus the write-back in flight equal `dirty_bytes` ≤ the cache; at a
   flush's completion nothing written before it is left in the cache, and
   the flush completes no earlier than the last write-back ends;
-- ssd: buffer bytes = open page + unfreed pages ≤ the buffer; a SATA
-  flush without PLP completes only after every earlier page has been
-  programmed (all started, none partly filled, the last one ended);
+- ssd: buffer bytes = open page + unfreed pages ≤ the buffer; the GC
+  pool within 0 … `gc_pool_mb`; a SATA flush without PLP completes only
+  after every earlier page has been programmed (all started, none partly
+  filled, the last one ended);
 - hdd without flushes: no read waits past the age limit plus the
   operations that can go before it.
 
@@ -84,7 +89,7 @@ The test build also compiles the hdd model with `-DMODEL_CHECK_SPTF`,
 which checks every write-back choice against a scan of the whole dirty
 set.
 
-**Result:** 241,863,257 checks, 0 failures (the count depends on the
+**Result:** 327,763,012 checks, 0 failures (the count depends on the
 randomized draws, so it changes whenever a parameter is added).
 
 **Can these tests fail?** Planted bugs, one at a time, in a copy of the
@@ -107,7 +112,12 @@ the push, a read joining a suspension paying `susp_us` again, no
 suspend scenarios; so do five in the page type and data transfer code
 (suspending a program still receiving its page, twice; levels 1-2-3
 instead of 1-2-4; a multi-4K read timed by its first 4K; page types
-that change between reads).
+that change between reads). And six in the later additions: NVMe
+ignoring `cmd_us` (the NVMe command-rate check), reads ignoring the
+write history, a stream taken over by a shorter one ending at the same
+address (the stream scenario), sequential writes over scattered data
+not paying `waf`, the GC pool never drawn, and its idle delay ignored
+(their scenarios).
 
 ## 2. Lateness: does the host deliver the timing?
 
@@ -285,17 +295,29 @@ ublk device at ~85K IOPS.
   at QD256 (datasheet 520K at QD512). `cmd_us 0.56` gives the model
   the datasheet's ceiling: 504K / 519K at QD128 / 256, before 647K /
   703K.
-- Large reads depend on how the data was written: a 128K read takes
-  247 µs on data written sequentially (model 252) and 379 µs on data
-  written by 4K random writes, whether the reads are sequential or
-  random; 1M reads 807 / 1106 µs (model 558). The model assumes
-  sequentially written data.
-- Sequential writes on the full drive run at ~410 MB/s (model 1550):
-  there a sequential stream also needs blocks freed by garbage
-  collection, which the model charges only to random writes.
-- A resting drive recovers: random writes at 150K after 17 h idle, 75K
-  in steady state. The model has no idle recovery; `waf` is the steady
-  state.
+- Large reads depend on how the data was written. On the same drive in
+  the same minute, a 128K / 1M read takes 245 / 791 µs on data written
+  sequentially and 522 / 1565 µs on a range whose every 4K was rewritten
+  about four times by random writes (after 0.7 drive capacities of
+  random writes over everything: 379 / 1106 µs), whether the reads are
+  sequential or random. The model's write history reproduces the
+  direction but is too cheap: with `--history rnd` (every chunk
+  scattered) 284 / 1031 µs. Scattered data also reads 4K 20 µs slower
+  on the drive (115 vs 95 µs), which the model doesn't have; mapping
+  table misses are the likely reason, not modelled.
+- Sequential writes after random preconditioning run at 300–410 MB/s,
+  and a second pass over the same 8 GiB just as slowly (302 / 300 MB/s):
+  what a write pays depends on the drive as a whole, not on the data
+  it overwrites. The model charges sequential writes `waf` by the
+  scattered share of the whole device: 310 MB/s with `--history rnd`,
+  1550 on a sequentially written drive (the drive when fresh: 1607).
+- A resting drive recovers, but only after a minute: random-write bursts
+  after 60 / 150 / 300 / 1200 s of idle wrote 0.8 / 37 / 43 / 41 GB above
+  the steady 78K, at ~200K. `--gc_idle_s 58 --gc_mbps 400 --gc_pool_mb
+  41000` fits that (the 1200 s value was predicted before it was read:
+  43 GB ± 30%). The model spends the pool at its program rate (~380K),
+  twice the drive's ~200K, and drops to steady at once where the drive
+  slides down over ~80 s.
 
 ## 4. Integrity: `bench/integrity.sh`
 
@@ -371,10 +393,11 @@ depend on how full the drive is.
   HDD's buffer caches writes (64 MiB). ssd buffer sizes. None of these
   is published by the drive vendors.
 - **Not modelled:** see the "Not modelled" lists in README; in particular
-  GC as a process, SLC caching and fill level on SSDs (so no idle
-  recovery, and sequential writes on a full drive run at the empty
-  drive's rate), write history (large reads of randomly written data
-  are slower), and zoned transfer rates on HDDs.
+  the rest of GC as a process on SSDs (fill level, the write cliff of a
+  fresh drive, idle GC taking die time), SLC caching, mapping table
+  misses (scattered data reads slower than the model's write history
+  gives), a write IOPS limit below the program rate, and zoned
+  transfer rates on HDDs.
 
 ## Rerunning
 

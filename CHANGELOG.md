@@ -6,6 +6,25 @@ when you report one.
 
 ## Unreleased
 
+- **ssd write history** (results move only with `--history rnd` or on
+  data your workload writes randomly and then reads in large pieces):
+  the model remembers per `page_kb` chunk whether its data was written
+  in one piece or scattered by random writes; a read of a scattered
+  chunk is one page read per 4K. Default `--history seq` keeps every
+  calibrated number. `ssd_model_new()` takes the device size.
+- **ssd sequential writes pay `waf` by the scattered share of the
+  drive** (results move for sequential writes after random writes):
+  garbage collection takes its victims from the whole drive, so on a
+  drive whose data random writes have scattered, sequential writes pay
+  too (the real Micron after random preconditioning: ~300 MB/s).
+- **ssd `--gc_mbps` / `--gc_pool_mb` / `--gc_idle_s`: garbage
+  collection works ahead while idle** (off by default, no result moves):
+  after `--gc_idle_s` of idle it prepares erased space, and writes after
+  a pause use it at one program unit per page. Fitted to the Micron
+  7300 PRO's bursts after idle (docs/VALIDATION.md): `--gc_pool_mb
+  41000 --gc_mbps 400 --gc_idle_s 58`.
+- Write stream detection continues the longest stream when several end
+  at the same address.
 - **`micron-7300` `cmd_us 0.56`** (results move above ~300K reads/s):
   4K random reads top out at 519K IOPS (datasheet 520K at QD512; the
   real drive 534K at QD256) instead of rising to ~700K. Every command,
