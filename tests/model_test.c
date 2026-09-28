@@ -192,6 +192,8 @@ static void check_state(struct sim *s)
 		      (unsigned long long)m->buf_bytes,
 		      (unsigned long long)sum);
 		CHECK(m->buf_bytes <= m->buf_cap, "buffer over capacity");
+		CHECK(m->pool >= 0 && m->pool <= m->pool_cap * (1 + 1e-9),
+		      "gc pool %.0f outside 0..%.0f", m->pool, m->pool_cap);
 		for (q = 0; q < m->p.dies; q++)
 			CHECK(m->die_free[q] == (m->prog_end[q] > m->read_end[q] ?
 				m->prog_end[q] : m->read_end[q]),
@@ -1256,6 +1258,64 @@ static void ssd_history(void)
 	sim_free(&s);
 }
 
+/* program units for n 4K random writes at QD32 after `idle` ns of nothing */
+static double ssd_units_after_idle(const struct ssd_params *p, __u64 idle,
+				   __u64 n)
+{
+	struct sim s;
+	double u;
+	__u64 i;
+
+	ssd_up(&s, p, 32);
+	s.deep_check = 1;
+	sim_run_until(&s, idle);
+	for (i = 0; i < n; i++) {
+		while (s.inflight == 32 && sim_step(&s, NONE))
+			;
+		sim_submit(&s, MODEL_WRITE, 8 * rnd_below(SSD_SECTORS / 8), 8, NULL);
+	}
+	sim_drain(&s, s.now + 60 * SEC);
+	sim_run_until(&s, s.now + 60 * SEC);
+	u = s.s->units_done;
+	sim_free(&s);
+	return u;
+}
+
+static void ssd_gc_pool(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	double page = p.page_kb << 10, n = 16384, bytes = n * 4096, pool, want, u;
+
+	/*
+	 * Writes arrive faster than the dies program: pages wait from the
+	 * first one on, so the pool fills only during the idle second.
+	 */
+	p.gc_pool_mb = 1024;
+	p.gc_mbps = 32;
+	pool = p.gc_mbps * 1e6;
+	cur_test = "ssd: after idle, random writes use the erased space GC prepared";
+	u = ssd_units_after_idle(&p, SEC, n);
+	want = (pool + (bytes - pool) * p.waf) / page;
+	CHECK(fabs(u - want) / want < 0.03, "%.0f program units, expected (pool "
+	      "+ rest x waf) / page = %.0f", u, want);
+
+	cur_test = "ssd: the pool stops at gc_pool_mb";
+	p.gc_pool_mb = 8;
+	pool = 8 * 1048576.0;
+	u = ssd_units_after_idle(&p, SEC, n);
+	want = (pool + (bytes - pool) * p.waf) / page;
+	CHECK(fabs(u - want) / want < 0.03, "%.0f program units, expected %.0f",
+	      u, want);
+
+	cur_test = "ssd: without gc_mbps every page of random writes costs waf";
+	p.gc_pool_mb = 1024;
+	p.gc_mbps = 0;
+	u = ssd_units_after_idle(&p, SEC, n);
+	want = bytes * p.waf / page;
+	CHECK(fabs(u - want) / want < 0.03, "%.0f program units, expected %.0f",
+	      u, want);
+}
+
 /* ---- randomized invariants --------------------------------------- */
 
 static void random_workload(struct sim *s, __u64 max_nr, int flushes,
@@ -1346,6 +1406,8 @@ static void ssd_random(int runs)
 		p.susp_us = rnd_below(2) ? 0 : 20;
 		p.tr_step_us = rnd_below(2) ? 0 : 26;
 		p.history = rnd_below(2);
+		p.gc_pool_mb = rnd_below(2) ? 0 : 4;
+		p.gc_mbps = rnd_below(2) ? 0 : 50;
 		p.cmd_us = p.nvme ? (rnd_below(2) ? 0 : 0.56) : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
@@ -1374,6 +1436,7 @@ int main(int argc, char **argv)
 	ssd_suspend();
 	ssd_read_levels();
 	ssd_history();
+	ssd_gc_pool();
 	hdd_random(runs);
 	ssd_random(runs);
 

@@ -39,7 +39,11 @@
  *    into the page that caused it. Writes continuing one of the last 8
  *    write streams count as sequential and cost one unit, unless they
  *    overwrite scattered chunks: freeing those needs the same copies. A
- *    full buffer makes writes wait;
+ *    full buffer makes writes wait. With gc_mbps and gc_pool_mb, garbage
+ *    collection also works ahead: while no page waits to be programmed
+ *    it prepares erased space at gc_mbps, up to gc_pool_mb, and pages
+ *    that need copies use that first at one unit per page (the refill
+ *    takes no die time: a simplification);
  *  - FLUSH: nothing is advertised with vwc = 0, so the kernel sends none.
  *    With plp = 1 the buffer is durable and a flush costs flush_us after
  *    it is issued; with plp = 0 the partly filled page is closed and the
@@ -211,10 +215,28 @@ static __u64 heap_pop(struct ssd_model *m)
 	return top;
 }
 
+/*
+ * Bring the pool up to time t: garbage collection refills it at gc_mbps
+ * while no page is waiting to be programmed and the dies have finished
+ * the last one.
+ */
+static void pool_refill(struct ssd_model *m, __u64 t)
+{
+	__u64 from = max_u64(m->max_end_started, m->pool_t);
+
+	if (m->pool_cap > 0 && m->seq_start == m->seq_next && t > from) {
+		m->pool += m->p.gc_mbps * 1e6 * (double)(t - from) / 1e9;
+		if (m->pool > m->pool_cap)
+			m->pool = m->pool_cap;
+	}
+	m->pool_t = max_u64(m->pool_t, t);
+}
+
 /* the open page becomes a closed page, ready to program at `ready` */
 static void close_open(struct ssd_model *m, __u64 ready)
 {
 	struct ssd_page *pg;
+	double gc, used;
 
 	if (!m->open_bytes)
 		return;
@@ -231,10 +253,16 @@ static void close_open(struct ssd_model *m, __u64 ready)
 		m->heap = realloc(m->heap, cap * sizeof(*m->heap));
 		assert(m->heap);
 	}
+	/* bytes that need GC copies take erased space from the pool first */
+	pool_refill(m, ready);
+	gc = m->open_gc;
+	used = gc < m->pool ? gc : m->pool;
+	m->pool -= used;
+	m->pool_used += used;
 	pg = page(m, m->seq_next++);
 	pg->bytes = m->open_bytes;
 	pg->ready = ready;
-	pg->units = 1 + (m->p.waf - 1) * (double)m->open_gc / m->open_bytes;
+	pg->units = 1 + (m->p.waf - 1) * (gc - used) / m->open_bytes;
 	pg->end = 0;
 	pg->freed = 0;
 	m->open_bytes = m->open_gc = 0;
@@ -705,7 +733,8 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	    p->tprog_us <= 0 || p->ch_mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
 	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
-	    p->tr_step_us < 0 || p->history > 1 ||
+	    p->tr_step_us < 0 || p->history > 1 || p->gc_pool_mb < 0 ||
+	    p->gc_mbps < 0 ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -757,6 +786,7 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
 	       m->link && m->pg && m->heap && m->wait && m->held && m->spare &&
 	       m->nflush);
 	m->sflush_tag = -1;
+	m->pool_cap = p->gc_mbps > 0 ? p->gc_pool_mb * 1048576.0 : 0;
 	return m;
 }
 
@@ -803,7 +833,8 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		"program_units %.1f\nbuffer_full_waits %llu\n"
 		"blocked_by_flush %llu\nblocked_ms_sum %.3f\n"
 		"read_die_waits %llu\nread_die_wait_ms_sum %.3f\n"
-		"read_suspends %llu\nfragment_reads %llu\nbuffer_mb %.3f\n",
+		"read_suspends %llu\nfragment_reads %llu\nbuffer_mb %.3f\n"
+		"gc_pool_mb %.3f\ngc_pool_used_mb %.3f\n",
 		(unsigned long long)m->n_read, (unsigned long long)m->n_write,
 		(unsigned long long)m->n_flush, m->flush_ns_sum / 1e6,
 		m->flush_ns_max / 1e6, m->seq_bytes / 1048576.0,
@@ -812,5 +843,6 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		(unsigned long long)m->n_blocked, m->blocked_ns_sum / 1e6,
 		(unsigned long long)m->n_read_wait, m->read_wait_ns_sum / 1e6,
 		(unsigned long long)m->n_read_susp,
-		(unsigned long long)m->n_frag_reads, m->buf_bytes / 1048576.0);
+		(unsigned long long)m->n_frag_reads, m->buf_bytes / 1048576.0,
+		m->pool / 1048576.0, m->pool_used / 1048576.0);
 }

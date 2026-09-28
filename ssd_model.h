@@ -25,6 +25,8 @@ struct ssd_params {
 	double		flush_us;	/* FLUSH cost once drained */
 	double		susp_us;	/* program suspend for a read, 0: none */
 	unsigned	history;	/* 1: data at start scattered (random) */
+	double		gc_pool_mb;	/* erased space GC keeps ready, 0: none */
+	double		gc_mbps;	/* GC refills it while idle, MB/s */
 	double		floor_us;	/* host overhead to subtract */
 	char		stats[256];	/* stats file, rewritten once a second */
 };
@@ -103,6 +105,14 @@ struct ssd_model {
 	 */
 	__u8 *hist;
 	__u64 nchunk;
+
+	/*
+	 * Erased space garbage collection has prepared while no program was
+	 * waiting or running (bytes of host data that need no GC copies),
+	 * and the time it was last brought up to date.
+	 */
+	double pool, pool_cap, pool_used;
+	__u64 pool_t;
 
 	struct ssd_req *wait;		/* writes waiting for buffer space, FIFO */
 	int nwait;

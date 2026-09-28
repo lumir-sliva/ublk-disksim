@@ -109,11 +109,13 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	ublk_log("ssd: %s link %.0f MB/s cmd %.1f us latency %.1f us, %u dies, "
 		 "page %u KiB, read %.1f us + %.1f us a level, program %.1f us "
 		 "x waf %.2f, suspend %.1f us, channel %.0f MB/s, buffer %u MiB, "
-		 "plp %u vwc %u flush %.1f us, floor %.1f us, history %s\n",
+		 "plp %u vwc %u flush %.1f us, floor %.1f us, history %s, "
+		 "gc pool %.0f MiB at %.0f MB/s\n",
 		 p->nvme ? "nvme" : "sata", p->iface_mbps, p->cmd_us,
 		 p->iface_us, p->dies, p->page_kb, p->tr_us, p->tr_step_us,
 		 p->tprog_us, p->waf, p->susp_us, p->ch_mbps, p->buf_mb, p->plp,
-		 p->vwc, p->flush_us, p->floor_us, p->history ? "rnd" : "seq");
+		 p->vwc, p->flush_us, p->floor_us, p->history ? "rnd" : "seq",
+		 p->gc_pool_mb, p->gc_mbps);
 	return 0;
 }
 
@@ -199,7 +201,11 @@ static void ssd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			p->history = !strcmp(v, "rnd");
-		} else if (!strcmp(k, "--stats"))
+		} else if (!strcmp(k, "--gc_pool_mb"))
+			p->gc_pool_mb = strtod(v, NULL);
+		else if (!strcmp(k, "--gc_mbps"))
+			p->gc_mbps = strtod(v, NULL);
+		else if (!strcmp(k, "--stats"))
 			snprintf(p->stats, sizeof(p->stats), "%s", v);
 		/* other targets' options pass through here too: ignore */
 	}
@@ -214,7 +220,8 @@ static void ssd_usage(const struct ublk_tgt_ops *ops)
 	       " [--tr_us X] [--tr_step_us X] [--ch_mbps X] [--tprog_us X]\n"
 	       "\t     [--waf X] [--susp_us X] [--buf_mb N]"
 	       " [--plp 0|1] [--vwc 0|1] [--flush_us X]\n"
-	       "\t     [--floor_us X] [--history seq|rnd] [--stats FILE]\n"
+	       "\t     [--floor_us X] [--history seq|rnd]"
+	       " [--gc_pool_mb X] [--gc_mbps X] [--stats FILE]\n"
 	       "\t     BACKING_DEV (use -q 1; -d 32 for sata, -d 128 for nvme)\n");
 }
 
