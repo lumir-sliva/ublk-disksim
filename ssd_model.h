@@ -27,6 +27,7 @@ struct ssd_params {
 	unsigned	history;	/* 1: data at start scattered (random) */
 	double		gc_pool_mb;	/* erased space GC keeps ready, 0: none */
 	double		gc_mbps;	/* GC refills it while idle, MB/s */
+	double		gc_idle_s;	/* ... once idle this long */
 	double		floor_us;	/* host overhead to subtract */
 	char		stats[256];	/* stats file, rewritten once a second */
 };
@@ -66,7 +67,7 @@ struct ssd_model {
 	struct model_env env;
 	__u64 page_bytes, buf_cap;
 	__u64 tr_ns, cmd_ns, iface_ns, flush_ns, floor_ns, unit_ns, susp_ns;
-	__u64 tr_step_ns, page_xfer_ns;
+	__u64 tr_step_ns, page_xfer_ns, gc_idle_ns;
 	unsigned depth;
 	__u64 now;
 

@@ -42,10 +42,10 @@
  *    data random writes have scattered needs copies whatever the new data
  *    is (on a fresh, sequentially written drive they cost one unit). A
  *    full buffer makes writes wait. With gc_mbps and gc_pool_mb, garbage
- *    collection also works ahead: while no page waits to be programmed
- *    it prepares erased space at gc_mbps, up to gc_pool_mb, and pages
- *    that need copies use that first at one unit per page (the refill
- *    takes no die time: a simplification);
+ *    collection also works ahead: once no page has waited to be
+ *    programmed for gc_idle_s it prepares erased space at gc_mbps, up
+ *    to gc_pool_mb, and pages that need copies use that first at one
+ *    unit per page (the refill takes no die time: a simplification);
  *  - FLUSH: nothing is advertised with vwc = 0, so the kernel sends none.
  *    With plp = 1 the buffer is durable and a flush costs flush_us after
  *    it is issued; with plp = 0 the partly filled page is closed and the
@@ -222,12 +222,12 @@ static __u64 heap_pop(struct ssd_model *m)
 
 /*
  * Bring the pool up to time t: garbage collection refills it at gc_mbps
- * while no page is waiting to be programmed and the dies have finished
- * the last one.
+ * while no page is waiting to be programmed, from gc_idle_s after the
+ * dies finished the last one.
  */
 static void pool_refill(struct ssd_model *m, __u64 t)
 {
-	__u64 from = max_u64(m->max_end_started, m->pool_t);
+	__u64 from = max_u64(m->max_end_started + m->gc_idle_ns, m->pool_t);
 
 	if (m->pool_cap > 0 && m->seq_start == m->seq_next && t > from) {
 		m->pool += m->p.gc_mbps * 1e6 * (double)(t - from) / 1e9;
@@ -739,7 +739,7 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
 	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
 	    p->tr_step_us < 0 || p->history > 1 || p->gc_pool_mb < 0 ||
-	    p->gc_mbps < 0 ||
+	    p->gc_mbps < 0 || p->gc_idle_s < 0 ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -794,6 +794,7 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
 	       m->nflush);
 	m->sflush_tag = -1;
 	m->pool_cap = p->gc_mbps > 0 ? p->gc_pool_mb * 1048576.0 : 0;
+	m->gc_idle_ns = (__u64)(p->gc_idle_s * 1e9);
 	return m;
 }
 

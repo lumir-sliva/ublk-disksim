@@ -1340,6 +1340,16 @@ static void ssd_gc_pool(void)
 	CHECK(fabs(u - want) / want < 0.03, "%.0f program units, expected %.0f",
 	      u, want);
 
+	cur_test = "ssd: the pool fills only once the drive has been idle gc_idle_s";
+	p.gc_pool_mb = 1024;
+	p.gc_idle_s = 0.5;
+	pool = p.gc_mbps * 1e6 * 0.5;
+	u = ssd_units_after_idle(&p, SEC, n);
+	want = (pool + (bytes - pool) * p.waf) / page;
+	CHECK(fabs(u - want) / want < 0.03, "%.0f program units, expected %.0f",
+	      u, want);
+	p.gc_idle_s = 0;
+
 	cur_test = "ssd: without gc_mbps every page of random writes costs waf";
 	p.gc_pool_mb = 1024;
 	p.gc_mbps = 0;
@@ -1441,6 +1451,7 @@ static void ssd_random(int runs)
 		p.history = rnd_below(2);
 		p.gc_pool_mb = rnd_below(2) ? 0 : 4;
 		p.gc_mbps = rnd_below(2) ? 0 : 50;
+		p.gc_idle_s = rnd_below(2) ? 0 : 0.002;
 		p.cmd_us = p.nvme ? (rnd_below(2) ? 0 : 0.56) : 3;
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
