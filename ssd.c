@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Lumir Sliva
 /*
  * ssd: kublk target for the flash SSD timing model (ssd_model.c), SATA or
  * NVMe, on top of a backing device (normally RAM). Data goes to the

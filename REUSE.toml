@@ -1,0 +1,44 @@
+version = 1
+SPDX-PackageName = "ublk-disksim"
+SPDX-PackageDownloadLocation = "https://github.com/lumir-sliva/ublk-disksim"
+
+# Imported from linux v6.17 (tools/testing/selftests/ublk and the uapi
+# header) and kept close to upstream, so their headers stay as imported.
+# Upstream's "GPL-2.0" is GPL-2.0-only; kublk.c's MIT header stands.
+[[annotations]]
+path = ["common.c", "null.c", "file_backed.c", "fault_inject.c", "stripe.c",
+        "utils.h", "ublk_dep.h"]
+precedence = "override"
+SPDX-FileCopyrightText = "Linux kernel contributors"
+SPDX-License-Identifier = "GPL-2.0-only"
+
+[[annotations]]
+path = "include/linux/ublk_cmd.h"
+precedence = "override"
+SPDX-FileCopyrightText = "Linux kernel contributors"
+SPDX-License-Identifier = "GPL-2.0-only WITH Linux-syscall-note"
+
+[[annotations]]
+path = "kublk.h"
+precedence = "override"
+SPDX-FileCopyrightText = ["Linux kernel contributors", "2026 Lumir Sliva"]
+SPDX-License-Identifier = "GPL-2.0-only"
+
+[[annotations]]
+path = "kublk.c"
+precedence = "aggregate"
+SPDX-FileCopyrightText = ["Linux kernel contributors", "2026 Lumir Sliva"]
+
+# Documentation, figures and the measurements behind them
+[[annotations]]
+path = ["README.md", "CHANGELOG.md", "docs/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Lumir Sliva"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# Expected calibration values (read by bench/check.py) and repo settings
+[[annotations]]
+path = ["bench/expect/**", ".gitignore", ".gitattributes", "REUSE.toml"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Lumir Sliva"
+SPDX-License-Identifier = "MIT"

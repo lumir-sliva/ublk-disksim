@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Lumir Sliva
 /*
  * hdd: kublk target for the hard disk timing model (hdd_model.c), on top
  * of a backing device (normally RAM). Data goes to the backing device at

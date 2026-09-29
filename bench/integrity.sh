@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # Data-integrity check for the kublk disk models.
 #
 # usage: sudo bench/integrity.sh [runtime_s=20]

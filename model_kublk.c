@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Lumir Sliva
 /*
  * Glue between a timing model and the kublk server, shared by the hdd and
  * ssd targets. Data goes to the backing device at once; the request

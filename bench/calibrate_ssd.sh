@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # Calibration micro-benchmarks for a kublk ssd device.
 #
 # usage: sudo bench/calibrate_ssd.sh [runtime_s=30] [extra kublk ssd options...]

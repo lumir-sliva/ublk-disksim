@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
+/* SPDX-FileCopyrightText: 2026 Lumir Sliva */
 /*
  * What a timing model sees of the world. The models (hdd_model.c,
  * ssd_model.c) never touch io_uring or the clock directly: the kublk glue

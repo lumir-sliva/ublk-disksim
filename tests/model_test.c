@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Lumir Sliva
 /*
  * Model tests: the hdd and ssd models on a virtual clock, without ublk.
  *

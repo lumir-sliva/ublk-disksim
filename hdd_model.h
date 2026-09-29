@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
+/* SPDX-FileCopyrightText: 2026 Lumir Sliva */
 /* hdd timing model, see hdd_model.c; kublk target glue in hdd.c */
 #ifndef HDD_MODEL_H
 #define HDD_MODEL_H

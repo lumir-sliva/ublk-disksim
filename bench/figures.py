@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # The figures in README and docs/, from calibration runs and fio output.
 #
 # Collect: turn run outputs into small tables in docs/img/data/ (rows are

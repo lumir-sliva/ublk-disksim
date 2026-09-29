@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Lumir Sliva
 /*
  * hdd: timing model of a single-actuator hard disk, on top of a backing
  * device (normally RAM).

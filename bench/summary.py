@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # One line per fio job and direction for the calibration scripts, and the
 # same numbers appended to a results file for bench/check.py.
 #

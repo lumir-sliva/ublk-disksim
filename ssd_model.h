@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: MIT */
+/* SPDX-FileCopyrightText: 2026 Lumir Sliva */
 /* ssd timing model, see ssd_model.c; kublk target glue in ssd.c */
 #ifndef SSD_MODEL_H
 #define SSD_MODEL_H

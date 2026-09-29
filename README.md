@@ -311,16 +311,26 @@ Documentation:
 
 ## Layout
 
-| file | origin |
-|---|---|
-| `kublk.c`, `kublk.h`, `utils.h`, `ublk_dep.h`, `common.c`, `null.c`, `file_backed.c`, `fault_inject.c`, `stripe.c` | linux v6.17 selftests, small changes marked in git history |
-| `include/linux/ublk_cmd.h` | linux v6.17 uapi, overrides older distro headers |
-| `hdd.c`, `ssd.c`, `model_kublk.[ch]`, `model.h`, `hdd_model.[ch]`, `ssd_model.[ch]`, `tests/`, `bench/`, `docs/` | this project |
+| file | origin | license |
+|---|---|---|
+| `kublk.c` | linux v6.17 selftests, small changes marked in git history | MIT |
+| `kublk.h`, `utils.h`, `ublk_dep.h`, `common.c`, `null.c`, `file_backed.c`, `fault_inject.c`, `stripe.c` | linux v6.17 selftests, small changes marked in git history | GPL-2.0-only |
+| `include/linux/ublk_cmd.h` | linux v6.17 uapi, overrides older distro headers | GPL-2.0-only WITH Linux-syscall-note |
+| `hdd.c`, `ssd.c`, `model_kublk.[ch]`, `Makefile` | this project: the kublk targets | GPL-2.0-only |
+| `model.h`, `hdd_model.[ch]`, `ssd_model.[ch]`, `tests/`, `bench/` | this project: the timing models, their tests, the benchmarks | MIT |
+| `README.md`, `CHANGELOG.md`, `docs/` | this project: documentation, figures, measurements | CC-BY-4.0 |
 
 `stripe.c` is not built: it needs io_uring opcodes newer than Ubuntu
 24.04's liburing 2.5 headers.
 
 ## License
 
-GPL-2.0 (kublk selftests and this project's files); `kublk.c` itself is
-MIT.
+The timing models are MIT so they can be used anywhere: in another
+block device server, a simulator, a fio engine. They include nothing
+but `model.h` and the C library. The kublk server they run in here is
+the kernel's GPL-2.0 selftest code, so a `kublk` binary as a whole is
+GPL-2.0-only. Documentation and figures are CC-BY-4.0.
+
+Every file carries an SPDX header or is listed in `REUSE.toml`; the
+license texts are in `LICENSES/`. `reuse lint`
+([REUSE](https://reuse.software)) checks that nothing is left out.

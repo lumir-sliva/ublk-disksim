@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # Compare a calibration run with the expected values of its profile.
 #
 # usage: check.py <results.tsv> <expect.tsv> [model.stats]

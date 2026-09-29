@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Lumir Sliva
 # Standalone build of kublk (linux tools/testing/selftests/ublk) plus the
 # hdd and ssd timing targets. Needs liburing headers (liburing-dev).
 # `make check` builds and runs the model tests (no root, no ublk needed).

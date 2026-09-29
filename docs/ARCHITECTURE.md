@@ -234,7 +234,9 @@ model call, over random parameters and workloads:
 
 1. Write the model against `model.h`: parameters, a `new`/`free`, a
    `submit(tag, op, lba, nr)` and a `wake()`; no clock, no I/O. Keep all
-   state in one struct so tests can check it.
+   state in one struct so tests can check it. Include only `model.h` and
+   the C library, never `kublk.h`: that keeps the model MIT while the
+   server around it is GPL-2.0 (README, License).
 2. Add scenario and randomized tests to `tests/model_test.c`.
 3. Write the kublk target like `hdd.c`: parse options into the
    parameters, set the device attributes (rotational, volatile cache),
