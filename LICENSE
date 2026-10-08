@@ -1,0 +1,14 @@
+ublk-disksim is licensed per file, following the REUSE specification
+(https://reuse.software). Each file carries an SPDX-License-Identifier
+header or is listed in REUSE.toml; the full license texts are in LICENSES/.
+
+  MIT           the timing models (hdd_model.c, ssd_model.c, model.h),
+                bench/ and tests/
+  GPL-2.0-only  the code imported from the Linux kernel's ublk selftests
+                (linux v6.17, tools/testing/selftests/ublk; kublk.c keeps
+                its own MIT header), the kublk targets hdd.c, ssd.c and
+                model_kublk.c, and the Makefile
+  CC-BY-4.0     documentation and figures
+
+A kublk binary as a whole is GPL-2.0-only. include/linux/ublk_cmd.h is
+GPL-2.0-only WITH Linux-syscall-note, as in the kernel.
