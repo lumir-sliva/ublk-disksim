@@ -6,6 +6,10 @@ when you report one.
 
 ## Unreleased
 
+- **`--lbs 512|1024|2048|4096`: the logical block size the device
+  reports** (no result moves; default unchanged at 512): for software
+  that refuses 512-byte sectors and wants a 4Kn device. The physical
+  block and minimum I/O sizes are raised to match.
 - **ssd write history** (results move only with `--history rnd` or on
   data your workload writes randomly and then reads in large pieces):
   the model remembers per `page_kb` chunk whether its data was written

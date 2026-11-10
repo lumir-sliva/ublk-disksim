@@ -568,6 +568,18 @@ static int ublk_dev_prep(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	dev->fds[0] = fd;
 	if (dev->tgt.ops->init_tgt)
 		ret = dev->tgt.ops->init_tgt(ctx, dev);
+	if (!ret && ctx->lbs_shift) {
+		struct ublk_param_basic *b = &dev->tgt.params.basic;
+
+		/* the device then only sees whole logical blocks */
+		b->logical_bs_shift = ctx->lbs_shift;
+		if (b->physical_bs_shift < ctx->lbs_shift)
+			b->physical_bs_shift = ctx->lbs_shift;
+		if (b->io_min_shift < ctx->lbs_shift)
+			b->io_min_shift = ctx->lbs_shift;
+		if (b->io_opt_shift < ctx->lbs_shift)
+			b->io_opt_shift = ctx->lbs_shift;
+	}
 	if (ret)
 		close(dev->fds[0]);
 	return ret;
@@ -1494,7 +1506,7 @@ static void __cmd_create_help(char *exe, bool recovery)
 	printf("%s %s -t [null|loop|stripe|fault_inject] [-q nr_queues] [-d depth] [-n dev_id]\n",
 			exe, recovery ? "recover" : "add");
 	printf("\t[--foreground] [--quiet] [-z] [--auto_zc] [--auto_zc_fallback] [--debug_mask mask] [-r 0|1 ] [-g]\n");
-	printf("\t[-e 0|1 ] [-i 0|1] [--no_ublk_fixed_fd]\n");
+	printf("\t[-e 0|1 ] [-i 0|1] [--no_ublk_fixed_fd] [--lbs 512|1024|2048|4096]\n");
 	printf("\t[--nthreads threads] [--per_io_tasks]\n");
 	printf("\t[target options] [backfile1] [backfile2] ...\n");
 	printf("\tdefault: nr_queues=2(max 32), depth=128(max 1024), dev_id=-1(auto allocation)\n");
@@ -1558,6 +1570,7 @@ int main(int argc, char *argv[])
 		{ "nthreads",		1,	NULL,  0 },
 		{ "per_io_tasks",	0,	NULL,  0 },
 		{ "no_ublk_fixed_fd",	0,	NULL,  0 },
+		{ "lbs",		1,	NULL,  0 },
 		{ 0, 0, 0, 0 }
 	};
 	const struct ublk_tgt_ops *ops = NULL;
@@ -1639,6 +1652,15 @@ int main(int argc, char *argv[])
 				ctx.per_io_tasks = 1;
 			if (!strcmp(longopts[option_idx].name, "no_ublk_fixed_fd"))
 				ctx.no_ublk_fixed_fd = 1;
+			if (!strcmp(longopts[option_idx].name, "lbs")) {
+				value = strtol(optarg, NULL, 10);
+				if (value < 512 || value > 4096 || (value & (value - 1))) {
+					ublk_err("--lbs %s: logical block size must be 512, 1024, 2048 or 4096\n",
+							optarg);
+					return -EINVAL;
+				}
+				ctx.lbs_shift = __builtin_ctz(value);
+			}
 			break;
 		case '?':
 			/*

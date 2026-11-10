@@ -82,6 +82,8 @@ struct dev_ctx {
 	unsigned int	auto_zc_fallback:1;
 	unsigned int	per_io_tasks:1;
 	unsigned int	no_ublk_fixed_fd:1;
+	/* --lbs: logical block size shift, 0 = what the target sets */
+	unsigned char	lbs_shift;
 
 	int _evtfd;
 	int _shmid;

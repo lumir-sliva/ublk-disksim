@@ -84,6 +84,20 @@ cat /sys/block/ublkb1/queue/write_cache   # "write through"
 The kernel then never sends flushes to it, and every write pays the
 mechanical cost before it completes.
 
+**4K-native sectors.** The targets report 512-byte logical blocks (512e,
+like most SATA disks and NVMe namespaces as shipped). For software that
+wants a 4Kn device, add `--lbs 4096` with the common options:
+
+```bash
+sudo ./kublk add -t ssd -n 2 -q 1 -d 128 --lbs 4096 --profile micron-7300 \
+     /dev/simback2
+cat /sys/block/ublkb2/queue/logical_block_size   # 4096
+```
+
+The physical block and minimum I/O sizes are raised to match, and the
+kernel then refuses smaller direct I/O with `EINVAL`. The model's timing
+is unchanged: it already works in whole requests.
+
 **List and remove.**
 
 ```bash
