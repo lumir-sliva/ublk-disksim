@@ -165,6 +165,9 @@ a fixed set of fio jobs and prints one line per job:
 sudo bench/calibrate.sh 30                       # 30 s per job, profile default
 sudo bench/calibrate.sh 30 --cache_mb 0          # same, cache off
 sudo ID=11 OUT=/tmp/cal bench/calibrate.sh 60 --seek_avg_ms 8.5
+# the same jobs on a real drive, judged by the same expectations
+# (writes all over it; refuses devices in use)
+sudo REAL=/dev/sdX bench/calibrate.sh 60
 ```
 
 Jobs: 4K random read at QD1, 2, 4, 8, 16 and 32, 1M sequential read, 1M sequential

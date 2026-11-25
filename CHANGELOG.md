@@ -6,6 +6,10 @@ when you report one.
 
 ## Unreleased
 
+- **`REAL=<device>` for `bench/calibrate.sh`** (no result moves): the
+  hdd jobs run on a real drive and `check.py` judges it by the same
+  expectation file, as `calibrate_ssd.sh` already did. The jobs span
+  the whole drive, since the model's 4 GiB stands for a full stroke.
 - **`--lbs 512|1024|2048|4096`: the logical block size the device
   reports** (no result moves; default unchanged at 512): for software
   that refuses 512-byte sectors and wants a 4Kn device. The physical
