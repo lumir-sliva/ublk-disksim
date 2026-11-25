@@ -200,6 +200,21 @@ To imitate another drive:
 a big disk. Leave it at 1.0 if the software spreads data over the whole
 device.
 
+`--capacity_gb` says how big the drive is that the device stands for.
+Seek distances scale with the device by themselves; how often two
+requests land on the same track does not, and a 4 GiB device has only
+some 2400 tracks. For reads it hardly matters. For a drive that holds
+thousands of writes to write back it does: give the real capacity, as
+`nearline-8t` does.
+
+If flushes on the real drive cost far less than writing the pending
+writes in place would (run the fsync jobs with `REAL=`: a flush after
+64 scattered writes under 30 ms is the sign), the drive logs them: fit
+`--log_ms` and `--log_us` to the flush time against the number of
+writes since the last flush, `--cache_ext` and `--cache_mb` to how
+many writes an idle drive takes before its rate drops, `--iface_us` to
+the rate before the drop and `--wsettle_ms` to the rate after it.
+
 ## 7. Limits and gotchas
 
 - One thread per device: ~200K 4K IOPS and ~4 GB/s at most.

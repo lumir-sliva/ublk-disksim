@@ -111,11 +111,22 @@ static void env_wake(void *c, __u64 when)
 static void flush_durable(struct sim *s, __u64 when)
 {
 	if (s->h && s->h->cache_bytes) {
+		if (s->h->log)	/* in the log, if not in place */
+			CHECK(!s->h->unlogged && !s->h->unlogged_bytes &&
+			      !s->h->nwait,
+			      "hdd flush done with %d extents not logged, %d "
+			      "writes waiting", s->h->unlogged, s->h->nwait);
+		else
 		CHECK(!s->h->ndirty && !s->h->destaging && !s->h->nwait,
 		      "hdd flush done with %d dirty extents, %llu bytes in "
 		      "write-back, %d writes waiting", s->h->ndirty,
 		      (unsigned long long)s->h->destaging, s->h->nwait);
-		CHECK(when >= s->h->busy_until,
+		/*
+		 * A logging flush with nothing to log does not wait for the
+		 * actuator (a read, or the write-back of logged data); one
+		 * that logs is timed in hdd_log_cache().
+		 */
+		CHECK(when >= s->h->busy_until || s->h->log,
 		      "hdd flush done %.3f ms before the last write-back ends",
 		      (s->h->busy_until - when) / 1e6);
 	}
@@ -158,12 +169,20 @@ static void check_state(struct sim *s)
 		return;
 	if (s->h) {
 		struct hdd_model *m = s->h;
-		__u64 sum = m->destaging;
-		int i;
+		__u64 sum = m->destaging, unl_bytes = 0;
+		int i, unl = 0;
 
 		/* sorted by LBA, disjoint, not touching: the model relies on it */
 		for (i = 0; i < m->ndirty; i++) {
 			sum += m->dirty[i].nr << 9;
+			CHECK(m->dirty[i].unl <= m->dirty[i].nr,
+			      "extent of %llu sectors has %llu unlogged",
+			      (unsigned long long)m->dirty[i].nr,
+			      (unsigned long long)m->dirty[i].unl);
+			if (m->dirty[i].unl) {
+				unl++;
+				unl_bytes += m->dirty[i].unl << 9;
+			}
 			if (i)
 				CHECK(m->dirty[i - 1].lba + m->dirty[i - 1].nr <
 				      m->dirty[i].lba,
@@ -174,6 +193,16 @@ static void check_state(struct sim *s)
 		CHECK(sum == m->dirty_bytes, "dirty_bytes %llu, extents sum %llu",
 		      (unsigned long long)m->dirty_bytes,
 		      (unsigned long long)sum);
+		/* what the write-back in progress carries is not in place yet */
+		unl += m->destage_unl_ext;
+		unl_bytes += m->destage_unl << 9;
+		CHECK(unl == m->unlogged && unl_bytes == m->unlogged_bytes,
+		      "unlogged %d extents %llu bytes, counted %d and %llu",
+		      m->unlogged, (unsigned long long)m->unlogged_bytes, unl,
+		      (unsigned long long)unl_bytes);
+		CHECK(!m->p.cache_ext || m->ndirty <= (int)m->p.cache_ext,
+		      "%d dirty extents, cache_ext %u", m->ndirty,
+		      m->p.cache_ext);
 		CHECK(!m->cache_bytes || m->dirty_bytes <= m->cache_bytes,
 		      "dirty %llu over cache %llu",
 		      (unsigned long long)m->dirty_bytes,
@@ -586,6 +615,422 @@ static double hdd_flush_after_64(const struct hdd_params *p)
 	t = (double)(s.rq[f].done_at - t0);
 	sim_free(&s);
 	return t;
+}
+
+/*
+ * The logging cache: flushes that log, the bound in extents, write-back
+ * that waits for idle and never starts before what triggered it, and the
+ * write settle.
+ */
+static void hdd_log_cache(void)
+{
+	struct hdd_params p = hdd_p();
+	struct sim s;
+	int i, f;
+	__u64 t0, far = HDD_SECTORS / 2;
+	double want, got;
+
+	p.log_ms = 8;
+	p.log_us = 70;
+	p.wb_idle_ms = 50;
+	p.cache_ext = 16;
+
+	cur_test = "hdd log: a flush costs log_ms + per extent log_us and transfer";
+	hdd_up(&s, &p, 32);
+	for (i = 0; i < 10; i++)
+		sim_submit(&s, MODEL_WRITE, far + i * 100000ULL, 8, NULL);
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	want = p.log_ms * 1e6 + 10 * (p.log_us * 1e3 + xfer_ns_of(p.mbps, 4096));
+	got = (double)(s.rq[f].done_at - t0);
+	CHECK(fabs(got - want) < 100, "flush of 10 writes %.3f ms, expected %.3f",
+	      got / 1e6, want / 1e6);
+	CHECK(s.h->ndirty == 10 && !s.h->n_destage,
+	      "after the flush %d extents in the cache, %llu written back: "
+	      "a logging flush writes nothing in place", s.h->ndirty,
+	      (unsigned long long)s.h->n_destage);
+
+	cur_test = "hdd log: a flush with nothing new is free";
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[f].done_at == t0, "second flush took %.3f ms",
+	      (s.rq[f].done_at - t0) / 1e6);
+
+	cur_test = "hdd log: logged extents are written back when idle";
+	sim_run_until(&s, s.now + 5 * SEC);
+	CHECK(!s.h->ndirty && !s.h->dirty_bytes && s.h->n_destage == 10,
+	      "%d extents left, %llu written back", s.h->ndirty,
+	      (unsigned long long)s.h->n_destage);
+	sim_free(&s);
+
+	cur_test = "hdd log: write-back waits for wb_idle_ms without a command";
+	hdd_up(&s, &p, 32);
+	s.now = 10 * SEC;	/* the actuator has been free for long */
+	sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+	sim_run_until(&s, s.now + (__u64)(p.wb_idle_ms * 1e6) - 1000);
+	CHECK(s.h->ndirty == 1 && !s.h->n_destage,
+	      "written back %.3f ms after the write, before wb_idle_ms %.0f",
+	      (s.now - 10 * SEC) / 1e6, p.wb_idle_ms);
+	sim_run_until(&s, s.now + SEC);
+	CHECK(!s.h->ndirty && s.h->busy_until >= 10 * SEC +
+	      (__u64)(p.wb_idle_ms * 1e6),
+	      "write-back ended at %.3f ms, before the idle time was over",
+	      (s.h->busy_until - 10 * SEC) / 1e6);
+	sim_free(&s);
+
+	/*
+	 * Extents many tracks apart, 100 ms apart, with a wb_idle_ms longer
+	 * than all of it: the cache takes cache_ext of them at interface
+	 * speed, and the next waits for a write-back that starts when the
+	 * cache filled up, not at some earlier time the idle actuator could
+	 * have used.
+	 */
+	cur_test = "hdd log: the cache takes cache_ext writes, the next waits for one write-back";
+	p.wb_idle_ms = 5000;
+	hdd_up(&s, &p, 32);
+	s.now = 10 * SEC;
+	for (i = 0; i < (int)p.cache_ext + 1; i++) {
+		if (i < (int)p.cache_ext)
+			sim_run_until(&s, s.now + 100 * MS);
+		else
+			/* full a moment ago: one write-back under way at most */
+			CHECK(s.h->n_destage <= 1 && s.h->ndirty +
+			      (s.h->destaging ? 1 : 0) == (int)p.cache_ext,
+			      "%llu write-backs started before the cache was "
+			      "full, %d extents in it",
+			      (unsigned long long)s.h->n_destage, s.h->ndirty);
+		t0 = s.now;
+		f = sim_submit(&s, MODEL_WRITE, far + i * 100000ULL, 8, NULL);
+		sim_drain(&s, s.now + SEC);	/* tags are reused: look now */
+		if (i < (int)p.cache_ext)
+			CHECK(fabs((double)(s.rq[f].done_at - t0) -
+				   (p.iface_us * 1e3 +
+				    xfer_ns_of(p.iface_mbps, 4096))) < 2,
+			      "write %d of cache_ext took %.3f ms", i,
+			      (s.rq[f].done_at - t0) / 1e6);
+	}
+	CHECK(s.rq[f].done_at - t0 >= (__u64)(p.seek_min_ms * 1e6) - MS / 10,
+	      "the write past cache_ext waited %.3f ms, under one seek %.2f ms",
+	      (s.rq[f].done_at - t0) / 1e6, p.seek_min_ms);
+	CHECK(s.h->n_cache_full == 1, "%llu writes found the cache full",
+	      (unsigned long long)s.h->n_cache_full);
+	sim_free(&s);
+	p.wb_idle_ms = 50;
+
+	/*
+	 * Two reads 64 sectors apart: on the device's own geometry the same
+	 * track, reached by a little rotation; on an 8 TB drive's, another
+	 * track, a seek away.
+	 */
+	cur_test = "hdd: capacity_gb decides what shares a track";
+	{
+		__u64 gap[2];
+		int r;
+
+		for (i = 0; i < 2; i++) {
+			struct hdd_params q = hdd_p();
+			__u64 a, step;
+
+			q.capacity_gb = i * 8000;
+			hdd_up(&s, &q, 32);
+			step = 64;	/* 0.16 ms of rotation past the first */
+			a = (far / (__u64)s.h->spt) * (__u64)s.h->spt + 8;
+			r = sim_submit(&s, MODEL_READ, a, 8, NULL);
+			sim_drain(&s, s.now + SEC);
+			t0 = s.now;
+			r = sim_submit(&s, MODEL_READ, a + 8 + step, 8, NULL);
+			sim_drain(&s, s.now + SEC);
+			gap[i] = s.rq[r].done_at - t0;
+			sim_free(&s);
+		}
+		CHECK(gap[0] < (__u64)(p.seek_min_ms * 1e6) / 2,
+		      "64 sectors on took %.3f ms on the device's own tracks: "
+		      "a seek within a track", gap[0] / 1e6);
+		CHECK(gap[1] >= (__u64)(p.seek_min_ms * 1e6),
+		      "64 sectors on took %.3f ms with capacity_gb 8000: "
+		      "no seek", gap[1] / 1e6);
+	}
+
+	cur_test = "hdd log: an overwrite after a flush is logged again, and only it";
+	p.cache_ext = 0;
+	hdd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, far, 2048, NULL);	/* 1 MiB */
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	sim_submit(&s, MODEL_WRITE, far + 8, 8, NULL);	/* inside it */
+	sim_submit(&s, MODEL_WRITE, far + 2048, 8, NULL);	/* appended */
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	want = p.log_ms * 1e6 + p.log_us * 1e3 + xfer_ns_of(p.mbps, 2 * 4096);
+	got = (double)(s.rq[f].done_at - t0);
+	CHECK(s.h->ndirty == 1 && fabs(got - want) < 100,
+	      "flush after 8K written into a logged 1 MiB extent took %.3f "
+	      "ms, expected %.3f (%d extents)", got / 1e6, want / 1e6,
+	      s.h->ndirty);
+	sim_free(&s);
+
+	/* a log appended to and flushed, as a write-ahead log is */
+	cur_test = "hdd log: append + flush costs the same every time";
+	hdd_up(&s, &p, 32);
+	want = p.log_ms * 1e6 + p.log_us * 1e3 + xfer_ns_of(p.mbps, 4096);
+	for (i = 0; i < 300; i++) {
+		sim_submit(&s, MODEL_WRITE, far + i * 8ULL, 8, NULL);
+		sim_drain(&s, s.now + SEC);
+		t0 = s.now;
+		f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+		sim_drain(&s, s.now + SEC);
+		got = (double)(s.rq[f].done_at - t0);
+		if (fabs(got - want) >= 100)
+			break;
+	}
+	CHECK(i == 300, "flush %d of an appended log took %.3f ms, expected %.3f",
+	      i, got / 1e6, want / 1e6);
+	sim_free(&s);
+
+	cur_test = "hdd log: a flush pays per extent not yet logged, not per dirty extent";
+	hdd_up(&s, &p, 32);
+	for (i = 0; i < 10; i++)
+		sim_submit(&s, MODEL_WRITE, far + i * 100000ULL, 8, NULL);
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	for (i = 10; i < 13; i++)
+		sim_submit(&s, MODEL_WRITE, far + i * 100000ULL, 8, NULL);
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	want = p.log_ms * 1e6 + 3 * (p.log_us * 1e3 + xfer_ns_of(p.mbps, 4096));
+	got = (double)(s.rq[f].done_at - t0);
+	CHECK(fabs(got - want) < 100 && s.h->ndirty == 13,
+	      "flush of 3 new writes next to 10 logged took %.3f ms, expected %.3f",
+	      got / 1e6, want / 1e6);
+	sim_free(&s);
+
+	/*
+	 * Data being written back is not durable until the transfer ends:
+	 * a flush arriving meanwhile waits for it, and so does one for data
+	 * appended behind a logged extent longer than a track.
+	 */
+	cur_test = "hdd log: a flush is not free while unlogged data is still being written back";
+	hdd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+	sim_drain(&s, s.now + SEC);
+	sim_run_until(&s, s.now + (__u64)(p.wb_idle_ms * 1e6) + MS);
+	CHECK(s.h->destaging, "no write-back under way to test against");
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[f].done_at >= s.h->busy_until || s.h->n_logged,
+	      "flush done %.3f ms before the write-back of its data ended",
+	      ((double)s.h->busy_until - (double)s.rq[f].done_at) / 1e6);
+	sim_free(&s);
+	hdd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, far, 8192, NULL);	/* 4 MiB: over a track */
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	sim_submit(&s, MODEL_WRITE, far + 8192, 8, NULL);	/* appended */
+	sim_drain(&s, s.now + SEC);
+	sim_run_until(&s, s.now + (__u64)(p.wb_idle_ms * 1e6) + MS);
+	CHECK(s.h->destaging && s.h->ndirty == 1,
+	      "expected the first track of one extent in write-back");
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[f].done_at - t0 >= (__u64)(p.log_ms * 1e6) &&
+	      s.h->n_logged == 2,
+	      "flush of data appended behind a logged extent took %.3f ms "
+	      "while its first track was written back, %llu flushes logged",
+	      (s.rq[f].done_at - t0) / 1e6,
+	      (unsigned long long)s.h->n_logged);
+	sim_free(&s);
+
+	cur_test = "hdd log: idle time counts from the end of a flush";
+	p.wb_idle_ms = 5;
+	hdd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);	/* the log takes longer than 5 ms */
+	sim_run_until(&s, s.now + 4 * MS);
+	CHECK(!s.h->n_destage, "write-back %.0f ms after a flush ended, "
+	      "wb_idle_ms %.0f", 4.0, p.wb_idle_ms);
+	sim_run_until(&s, s.now + SEC);
+	CHECK(!s.h->ndirty, "not written back when idle");
+	sim_free(&s);
+	p.wb_idle_ms = 50;
+
+	/*
+	 * Reads queued without a gap: a cache with room is left alone, a
+	 * full one gets a write-back between reads, which makes room.
+	 */
+	cur_test = "hdd log: queued reads share the actuator only with a full cache";
+	for (i = 0; i < 2; i++) {
+		int k;
+
+		p.cache_ext = i ? 4 : 0;
+		p.cache_mb = 1;
+		p.wb_idle_ms = 5000;
+		hdd_up(&s, &p, 32);
+		s.now = SEC;
+		for (k = 0; k < 8; k++)
+			sim_submit(&s, MODEL_READ, rnd_below(HDD_SECTORS / 8) * 8,
+				   8, NULL);
+		for (k = 0; k < 4; k++)	/* 0.78 MiB of 1: over 3/4, room for one more */
+			sim_submit(&s, MODEL_WRITE, far + k * 100000ULL, 400, NULL);
+		sim_drain(&s, s.now + SEC);
+		if (i)
+			CHECK(s.h->n_destage == 1, "%llu write-backs while 8 "
+			      "reads were served with the cache full",
+			      (unsigned long long)s.h->n_destage);
+		else
+			CHECK(!s.h->n_destage, "%llu write-backs between "
+			      "queued reads with room in the cache",
+			      (unsigned long long)s.h->n_destage);
+		sim_free(&s);
+	}
+	p.cache_ext = 0;
+	p.cache_mb = hdd_p().cache_mb;
+	p.wb_idle_ms = 50;
+
+	/*
+	 * A cache full of small extents and a sequential stream: its first
+	 * write waits for room like any other, the ones that continue it go
+	 * straight to the platters at the media rate.
+	 */
+	cur_test = "hdd log: a sequential stream does not queue behind a full cache";
+	p.cache_mb = 2;
+	p.wb_idle_ms = 5000;
+	hdd_up(&s, &p, 32);
+	for (i = 0; i < 4; i++)		/* 2 MiB: full */
+		sim_submit(&s, MODEL_WRITE, far + i * 100000ULL, 1024, NULL);
+	sim_drain(&s, s.now + SEC);
+	sim_submit(&s, MODEL_WRITE, 8, 2048, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.h->n_cache_full == 1, "the stream's first write did not wait");
+	t0 = s.now;
+	for (i = 1; i <= 16; i++) {
+		f = sim_submit(&s, MODEL_WRITE, 8 + i * 2048ULL, 2048, NULL);
+		sim_drain(&s, s.now + SEC);
+	}
+	got = (double)(s.now - t0);
+	/* a positioning each at worst, and a write-back in turn */
+	want = 16 * (xfer_ns_of(p.mbps, 1 << 20) +
+		     2 * (s.h->seek_full_ms * 1e6 + 2 * rev_ns(&p)));
+	CHECK(s.h->n_cache_full == 1 && got < want,
+	      "16 MiB continuing a stream took %.1f ms (bound %.1f), %llu of "
+	      "them waited for room", got / 1e6, want / 1e6,
+	      (unsigned long long)(s.h->n_cache_full - 1));
+	sim_free(&s);
+	p.cache_mb = hdd_p().cache_mb;
+	p.wb_idle_ms = 50;
+
+	cur_test = "hdd log: a flush with nothing to log does not wait for a write-back";
+	hdd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	/* into the idle write-back of that extent */
+	sim_run_until(&s, s.now + (__u64)(p.wb_idle_ms * 1e6) + MS);
+	CHECK(s.h->destaging, "no write-back under way to test against");
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[f].done_at == t0, "flush waited %.3f ms",
+	      (s.rq[f].done_at - t0) / 1e6);
+	sim_free(&s);
+
+	/*
+	 * A full track waits for room behind small writes that still fit:
+	 * the write-back for it starts when it arrived, not before.
+	 */
+	cur_test = "hdd log: a write waiting for room is not served from the past";
+	p.cache_mb = 2;
+	p.wb_idle_ms = 5000;
+	hdd_up(&s, &p, 32);
+	s.now = 10 * SEC;
+	for (i = 0; i < 3; i++) {	/* 1.5 MiB dirty, far apart */
+		sim_submit(&s, MODEL_WRITE, far + i * 1000000ULL, 1024, NULL);
+		sim_drain(&s, s.now + SEC);
+		sim_run_until(&s, s.now + 100 * MS);
+	}
+	CHECK(!s.h->n_destage, "write-back before anything waited");
+	sim_submit(&s, MODEL_WRITE, 8, 8, NULL);	/* last_nr small: room */
+	sim_drain(&s, s.now + SEC);
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_WRITE, far / 2, 2048, NULL);	/* 1 MiB: none */
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[f].done_at - t0 >= (__u64)(p.seek_min_ms * 1e6) +
+	      (__u64)(p.iface_us * 1e3 + xfer_ns_of(p.iface_mbps, 1 << 20)),
+	      "the waiting write completed after %.3f ms, under a seek "
+	      "plus its own host transfer", (s.rq[f].done_at - t0) / 1e6);
+	sim_free(&s);
+
+	/* without a log a flush still drains the cache, and at once */
+	cur_test = "hdd: a draining flush does not wait for wb_idle_ms";
+	p.log_ms = p.log_us = 0;
+	hdd_up(&s, &p, 32);
+	s.now = 10 * SEC;
+	sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+	t0 = s.now;
+	f = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + 10 * SEC);
+	CHECK(!s.h->ndirty && s.rq[f].done_at - t0 < 100 * MS &&
+	      s.rq[f].done_at - t0 >= (__u64)(p.seek_min_ms * 1e6),
+	      "flush of one far write took %.3f ms with wb_idle_ms 5000",
+	      (s.rq[f].done_at - t0) / 1e6);
+	sim_free(&s);
+	p.log_ms = 8;
+	p.log_us = 70;
+	p.cache_mb = hdd_p().cache_mb;
+	p.wb_idle_ms = 50;
+
+	/*
+	 * One far write, written back alone, at many platter phases: the
+	 * settle delays the arrival on the track, so the sector is caught
+	 * as before or one revolution later, and over all phases the mean
+	 * delay is the settle itself.
+	 */
+	cur_test = "hdd: wsettle_ms is added to a seek that ends in a write";
+	{
+		__u64 end[2];
+		double d, sum = 0, rev = rev_ns(&p);
+		int k, n = 2000;
+
+		for (k = 0; k < n; k++) {
+			p.seed = rnd();
+			for (i = 0; i < 2; i++) {
+				p.wsettle_ms = i * 0.7;
+				hdd_up(&s, &p, 32);
+				sim_submit(&s, MODEL_WRITE, far, 8, NULL);
+				sim_run_until(&s, s.now + SEC);
+				CHECK(!s.h->ndirty, "write not written back");
+				end[i] = s.h->busy_until;
+				sim_free(&s);
+			}
+			d = (double)end[1] - (double)end[0];
+			for (i = 0; i < 2; i++) {	/* a read does not pay it */
+				int r;
+
+				p.wsettle_ms = i * 0.7;
+				hdd_up(&s, &p, 32);
+				r = sim_submit(&s, MODEL_READ, far, 8, NULL);
+				sim_drain(&s, s.now + SEC);
+				end[i] = s.rq[r].done_at;
+				sim_free(&s);
+			}
+			CHECK(end[0] == end[1],
+			      "a read took %.3f ms longer with wsettle_ms",
+			      ((double)end[1] - (double)end[0]) / 1e6);
+			CHECK(fabs(d) < 10 || fabs(d - rev) < 10,
+			      "a 0.7 ms settle moved the write-back by %.3f ms, "
+			      "neither 0 nor a revolution", d / 1e6);
+			sum += d;
+		}
+		CHECK(fabs(sum / n - 0.7e6) < 0.1e6,
+		      "mean delay over %d phases %.3f ms, the settle is 0.7",
+		      n, sum / n / 1e6);
+		p.seed = 0;
+	}
 }
 
 static void hdd_wb_window(void)
@@ -1396,7 +1841,8 @@ static void hdd_random(int runs)
 {
 	static const unsigned cache[] = { 0, 1, 4, 64 }, ncq[] = { 1, 4, 32 },
 		rpm[] = { 5400, 7200, 15000 }, window[] = { 0, 1, 4 };
-	static const double wait[] = { 0, 50, 500 };
+	static const double wait[] = { 0, 50, 500 }, idle[] = { 0, 2, 50 };
+	static const unsigned ext[] = { 0, 1, 3, 64 };
 	int i;
 
 	for (i = 0; i < runs; i++) {
@@ -1410,10 +1856,20 @@ static void hdd_random(int runs)
 		p.rpm = rpm[rnd_below(3)];
 		p.max_wait_ms = wait[rnd_below(3)];
 		p.wb_window = window[rnd_below(3)];
+		p.cache_ext = ext[rnd_below(4)];
+		p.wb_idle_ms = idle[rnd_below(3)];
+		if (rnd_below(2)) {
+			p.log_ms = 8;
+			p.log_us = 70;
+		}
+		if (rnd_below(2))
+			p.wsettle_ms = 0.7;
+		if (rnd_below(2))
+			p.capacity_gb = 8000;
 		p.seed = rnd();
 		hdd_up(&s, &p, 32);
 		s.deep_check = 1;
-		full = s.h->seek_full_ms * 1e6;
+		full = s.h->seek_full_ms * 1e6 + p.wsettle_ms * 1e6;
 		op = full + rev_ns(&p) + xfer_ns_of(p.mbps, 1 << 20);
 		wb = full + 2 * rev_ns(&p);	/* a forced write-back: one track */
 		/*
@@ -1477,6 +1933,7 @@ int main(int argc, char **argv)
 	hdd_random_read_latency();
 	hdd_cached_write_and_flush();
 	hdd_writeback_by_track();
+	hdd_log_cache();
 	hdd_wb_window();
 	hdd_writer_next_to_readers();
 	hdd_age_limit();

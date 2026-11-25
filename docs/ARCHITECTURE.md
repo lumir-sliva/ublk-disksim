@@ -142,6 +142,23 @@ One actuator, a platter, a volatile write cache.
   first instead (an arrival counter per extent; a merged extent keeps its
   oldest piece's), a drive that reorders little. Its cache space is
   freed when that transfer ends.
+- **A logging drive** (`log_ms`, `log_us`): each extent carries how many
+  of its sectors no flush has logged. A flush keeps the actuator for
+  `log_ms` + per unlogged extent `log_us` + the media transfer of the
+  unlogged sectors, clears them and completes; the extents stay dirty.
+  Sectors in a write-back count as unlogged until its transfer ends, and
+  a flush with nothing to log completes at once. The cache is then "what
+  is not in place yet", bounded by `cache_mb` and `cache_ext`. With
+  `wb_idle_ms` a write-back needs a trigger and cannot start before it:
+  the cache having no room for another write of the last size, a write
+  waiting for room, a flush that drains (no log), or `wb_idle_ms` since
+  the last command arrived or flush ended. A write that continues the
+  previous one and finds no room is queued for the platters directly.
+- **Tracks:** the sector angle comes from the LBA and the model's track
+  length. Whether two LBAs share a track (no seek between them) uses the
+  device's own tracks, or with `capacity_gb` those of the drive the
+  device stands for: a 4 GiB device has ~2400 tracks, an 8 TB drive four
+  million.
 - **When write-back runs:** whenever the actuator has nothing queued.
   Once the cache is 3/4 full or writes wait for space, also in turn with
   the queue: one write-back per queued request served.

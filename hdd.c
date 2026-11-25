@@ -104,10 +104,14 @@ static int hdd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 
 	ublk_log("hdd: rpm %u seek %.2f/%.2f/%.2f ms (min/avg/full) media %.0f MB/s "
 		 "(%.0f sectors/track) cache %u MiB ncq %u wb window %u "
-		 "max wait %.0f ms stroke %.2f\n",
+		 "max wait %.0f ms stroke %.2f\n"
+		 "hdd: cache extents %u log %.1f ms + %.0f us/extent "
+		 "write-back after %.0f ms idle write settle %.2f ms "
+		 "capacity %.0f GB\n",
 		 p->rpm, p->seek_min_ms, p->seek_avg_ms, d->m->seek_full_ms,
 		 p->mbps, d->m->spt, p->cache_mb, p->ncq, p->wb_window,
-		 p->max_wait_ms, p->stroke);
+		 p->max_wait_ms, p->stroke, p->cache_ext, p->log_ms,
+		 p->log_us, p->wb_idle_ms, p->wsettle_ms, p->capacity_gb);
 	return 0;
 }
 
@@ -169,6 +173,18 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->wb_window = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--max_wait_ms"))
 			p->max_wait_ms = strtod(v, NULL);
+		else if (!strcmp(k, "--capacity_gb"))
+			p->capacity_gb = strtod(v, NULL);
+		else if (!strcmp(k, "--cache_ext"))
+			p->cache_ext = strtoul(v, NULL, 10);
+		else if (!strcmp(k, "--log_ms"))
+			p->log_ms = strtod(v, NULL);
+		else if (!strcmp(k, "--log_us"))
+			p->log_us = strtod(v, NULL);
+		else if (!strcmp(k, "--wb_idle_ms"))
+			p->wb_idle_ms = strtod(v, NULL);
+		else if (!strcmp(k, "--wsettle_ms"))
+			p->wsettle_ms = strtod(v, NULL);
 		else if (!strcmp(k, "--stroke"))
 			p->stroke = strtod(v, NULL);
 		else if (!strcmp(k, "--seed"))
@@ -181,12 +197,15 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 
 static void hdd_usage(const struct ublk_tgt_ops *ops)
 {
-	printf("\thdd: [--profile hgst-7k8|barracuda-2t] [--rpm N] "
+	printf("\thdd: [--profile hgst-7k8|nearline-8t|barracuda-2t] [--rpm N] "
 	       "[--seek_min_ms X] [--seek_avg_ms X]\n"
 	       "\t     [--mbps X] [--iface_mbps X] [--iface_us X] "
 	       "[--cache_mb N (0 = write-through)]\n"
 	       "\t     [--ncq N] [--wb_window N (0 = whole cache, max 64)] "
 	       "[--max_wait_ms X (0 = none)]\n"
+	       "\t     [--cache_ext N (0 = no limit)] [--log_ms X] [--log_us X] "
+	       "[--wb_idle_ms X]\n"
+	       "\t     [--wsettle_ms X] [--capacity_gb X (0 = the device's size)]\n"
 	       "\t     [--stroke F] [--seed N] [--stats FILE] "
 	       "BACKING_DEV (use -q 1 -d 32)\n");
 }

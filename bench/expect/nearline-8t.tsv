@@ -1,0 +1,15 @@
+# 8 TB 7200 rpm nearline SATA drive, write cache on: means of three
+# specimens measured with REAL= over the whole drive, 60 s jobs. The
+# write rows are in the state the jobs before them leave: the cache
+# full of writes not yet in place.
+# label	job	rw	metric	kind	value	tolerance	source
+randread-qd1	randread-qd1	read	lat_mean_us	~	11800	0.1	drives: 11.74-11.84 ms
+randread-qd32	randread-qd32	read	iops	~	203	0.15	drives: 201-205
+randwrite-qd1	randwrite-qd1	write	iops	~	520	0.15	drives: 508-528 over 60 s, the first ~5400 writes fast
+flush-after	randwrite-qd1	-	seconds	~	0.4	0.3	drives: 0.33-0.44 s with the cache full
+randwrite-fsync	randwrite-fsync	sync	fsync_mean_us	~	10000	0.2	drives: 9.7-10.2 ms
+randwrite-fsync8	randwrite-fsync8	sync	fsync_mean_us	~	11550	0.2	drives: 11.4-11.7 ms
+randwrite-fsync64	randwrite-fsync64	sync	fsync_mean_us	~	16100	0.2	drives: 15.9-16.3 ms
+randwrite-fsync64	randwrite-fsync64	write	iops	~	405	0.15	drives: 397-410
+blocking	reader	read	iops	~	44.3	0.15	drives: 44.0-44.6
+stats	-	-	late_us_p99	<=	500	0	completions fire within 500 us of the model's schedule (4% of a 12 ms operation)

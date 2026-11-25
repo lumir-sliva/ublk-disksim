@@ -28,12 +28,24 @@
  *  - FLUSH as SATA FLUSH CACHE: a non-queued command. Requests queued before
  *    it are served, the whole dirty cache is destaged, and everything that
  *    arrives meanwhile (reads included) waits until the flush completes;
+ *  - optionally, a drive that logs instead (log_ms / log_us > 0): a flush
+ *    appends the extents no flush has logged yet to a log on the platters
+ *    (log_ms once, log_us and the media transfer per extent) and
+ *    completes. The extents stay in the cache, which is then the set of
+ *    writes not yet in place, bounded by cache_mb and by cache_ext
+ *    extents. With wb_idle_ms the actuator writes back only once no
+ *    command has arrived for that long, or when the cache has no room
+ *    for another write: a burst is taken at interface speed until the
+ *    cache is full, then at the rate of write-back; a write that
+ *    continues the previous one and finds no room goes straight to the
+ *    platters. wsettle_ms is added to every seek that ends in a write;
+ *  - capacity_gb: the device stands for a drive of that size, so two
+ *    requests share a track (no seek) only as often as on that drive;
  *  - write-through (cache_mb = 0): no volatile cache is advertised, so the
  *    kernel never sends flushes and every write pays mechanical time.
  *
  * Not modelled: zoned transfer rates (one rate, one track size), read
- * cache / read-ahead beyond "sequential costs no positioning", firmware
- * limits on dirty data other than cache_mb, destage idle timers, thermal
+ * cache / read-ahead beyond "sequential costs no positioning", thermal
  * recalibration, a fixed cost per flush.
  * Calibrate against the drive you want to imitate before trusting
  * absolute numbers.
@@ -84,14 +96,17 @@ static double seek_ns(struct hdd_model *m, double d)
  * of this over queued requests is rotational position ordering.
  */
 static double pos_ns(struct hdd_model *m, double t, __u64 from, __u64 to,
-		     int contig)
+		     int contig, int wr)
 {
 	double seek = 0, ang, rot;
 
 	if (from == to && contig)
 		return 0;
-	if ((__u64)(from / m->spt) != (__u64)(to / m->spt))
+	if ((__u64)(from / m->tspt) != (__u64)(to / m->tspt)) {
 		seek = seek_ns(m, fabs((double)to - (double)from));
+		if (wr)
+			seek += m->p.wsettle_ms * 1e6;
+	}
 	ang = (double)to / m->spt;
 	ang -= floor(ang);
 	rot = ang - phase_at(m, t + seek);
@@ -132,7 +147,7 @@ static int dirty_find_end(struct hdd_model *m, __u64 lba)
  */
 static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 {
-	__u64 s = lba, e = lba + nr, seq = m->next_seq++;
+	__u64 s = lba, e = lba + nr, seq = m->next_seq++, unl = nr;
 	int i = dirty_find_end(m, s), j = i;
 
 	while (j < m->ndirty && m->dirty[j].lba <= e) {
@@ -145,6 +160,12 @@ static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 		if (x->seq < seq)
 			seq = x->seq;
 		m->dirty_bytes -= x->nr << 9;
+		/* what a flush logged of the pieces stays logged */
+		if (x->unl) {
+			unl += x->unl;
+			m->unlogged--;
+			m->unlogged_bytes -= x->unl << 9;
+		}
 	}
 	if (j == i) {		/* nothing merged: make room at i */
 		if (m->ndirty == m->cap_dirty) {
@@ -165,7 +186,17 @@ static void dirty_add(struct hdd_model *m, __u64 lba, __u64 nr, __u64 t)
 	m->dirty[i].nr = e - s;
 	m->dirty[i].added = t;
 	m->dirty[i].seq = seq;
+	/*
+	 * A write over unlogged data is counted twice up to here; the cap
+	 * only keeps it within the extent, so rewriting a block of a large
+	 * dirty extent many times makes the next flush dearer than it is.
+	 */
+	if (unl > e - s)
+		unl = e - s;
+	m->dirty[i].unl = unl;
 	m->dirty_bytes += (e - s) << 9;
+	m->unlogged++;
+	m->unlogged_bytes += unl << 9;
 }
 
 static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now);
@@ -173,6 +204,23 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now);
 static __u64 max_u64(__u64 a, __u64 b)
 {
 	return a > b ? a : b;
+}
+
+/* room in the cache for a write of nr sectors */
+static int cache_room(const struct hdd_model *m, __u64 nr)
+{
+	if (m->dirty_bytes + (nr << 9) > m->cache_bytes)
+		return 0;
+	return !m->p.cache_ext ||
+		m->ndirty + m->destage_ext < (int)m->p.cache_ext;
+}
+
+/* after a write of nr sectors entered the cache at t: is it full now? */
+static void cache_filled(struct hdd_model *m, __u64 nr, __u64 t)
+{
+	m->last_nr = nr;
+	if (!cache_room(m, nr))
+		m->full_at = t;
 }
 
 #define HDD_WB_WINDOW_MAX 64
@@ -206,7 +254,7 @@ static int best_dirty_window(struct hdd_model *m, __u64 free_at,
 	for (j = 0; j < n; j++) {
 		const struct hdd_ext *x = &m->dirty[idx[j]];
 		__u64 t = max_u64(free_at, x->added);
-		double ready = t + pos_ns(m, t, m->head, x->lba, 1);
+		double ready = t + pos_ns(m, t, m->head, x->lba, 1, 1);
 
 		if (best < 0 || ready < *bready) {
 			*bready = ready;
@@ -237,10 +285,10 @@ static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
 		__u64 t = max_u64(free_at, x->added);
 		double ready;
 
-		if (best >= 0 && d >= m->spt &&
+		if (best >= 0 && d >= m->tspt &&
 		    free_at + seek_ns(m, d) >= *bready)
 			break;
-		ready = t + pos_ns(m, t, m->head, x->lba, 1);
+		ready = t + pos_ns(m, t, m->head, x->lba, 1, 1);
 		if (best < 0 || ready < *bready) {
 			*bready = ready;
 			best = i;
@@ -252,10 +300,10 @@ static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
 		__u64 t = max_u64(free_at, x->added);
 		double ready;
 
-		if (best >= 0 && d >= m->spt &&
+		if (best >= 0 && d >= m->tspt &&
 		    free_at + seek_ns(m, d) >= *bready)
 			break;
-		ready = t + pos_ns(m, t, m->head, x->lba, 1);
+		ready = t + pos_ns(m, t, m->head, x->lba, 1, 1);
 		if (best < 0 || ready < *bready) {
 			*bready = ready;
 			best = i;
@@ -266,7 +314,7 @@ static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
 	for (i = 0; i < m->ndirty; i++) {
 		__u64 t = max_u64(free_at, m->dirty[i].added);
 
-		assert(t + pos_ns(m, t, m->head, m->dirty[i].lba, 1) >= *bready);
+		assert(t + pos_ns(m, t, m->head, m->dirty[i].lba, 1, 1) >= *bready);
 	}
 #endif
 	return best;
@@ -287,6 +335,20 @@ static void destage(struct hdd_model *m, int i, double ready)
 	m->busy_until = (__u64)ready + xfer_ns(m->p.mbps, nr);
 	m->head = x->lba + nr;
 	m->destaging = nr << 9;
+	m->destage_ext = nr == x->nr;
+	if (x->unl) {
+		/*
+		 * Which sectors of an extent are the unlogged ones is not
+		 * kept: take them to be its end, so this piece carries only
+		 * what the rest cannot hold. They count as unlogged until
+		 * the transfer ends (pump).
+		 */
+		__u64 u = x->unl > x->nr - nr ? x->unl - (x->nr - nr) : 0;
+
+		x->unl -= u;
+		m->destage_unl = u;
+		m->destage_unl_ext = u && !x->unl;
+	}
 	if (nr == x->nr) {
 		memmove(m->dirty + i, m->dirty + i + 1,
 			(m->ndirty - i - 1) * sizeof(*m->dirty));
@@ -297,6 +359,24 @@ static void destage(struct hdd_model *m, int i, double ready)
 	}
 	m->n_destage++;
 	m->wb_turn = 1;
+}
+
+/*
+ * With wb_idle_ms the actuator does not write back on its own while
+ * commands keep coming, so a write-back cannot start before what
+ * triggered it: the cache filling up, a write waiting for room, a flush
+ * that waits for the cache to drain, or wb_idle_ms after the latest
+ * command.
+ */
+static __u64 wb_since(const struct hdd_model *m)
+{
+	if (!cache_room(m, m->last_nr))
+		return m->full_at;
+	if (m->nwait)
+		return m->wait[0].arrive;
+	if (m->flush_tag >= 0 && !m->log)
+		return m->flush_start;
+	return m->last_cmd + m->wb_idle_ns;
 }
 
 /*
@@ -321,15 +401,20 @@ static __u64 pump(struct hdd_model *m)
 		/* the last write-back is on the platters: its space is free */
 		m->dirty_bytes -= m->destaging;
 		m->destaging = 0;
+		m->destage_ext = 0;
+		m->unlogged_bytes -= m->destage_unl << 9;
+		m->unlogged -= m->destage_unl_ext;
+		m->destage_unl = 0;
+		m->destage_unl_ext = 0;
 
 		/* cache space freed by destaging admits waiting writes */
-		while (m->nwait && m->dirty_bytes + (m->wait[0].nr << 9) <=
-				m->cache_bytes) {
+		while (m->nwait && cache_room(m, m->wait[0].nr)) {
 			struct hdd_req w = m->wait[0];
 			__u64 t = max_u64(free_at, w.arrive);
 
 			memmove(m->wait, m->wait + 1, --m->nwait * sizeof(*m->wait));
 			dirty_add(m, w.lba, w.nr, t);
+			cache_filled(m, w.nr, t);
 			m->env.done(m->env.ctx, w.tag,
 				    t + host_ns(m, w.nr));
 		}
@@ -351,8 +436,14 @@ static __u64 pump(struct hdd_model *m)
 			 * than the best of a few queued reads.)
 			 */
 			if (m->ndirty && !m->wb_turn && (m->nwait ||
-			    m->dirty_bytes >= m->cache_bytes / 4 * 3)) {
+			    (m->wb_idle_ns ? !cache_room(m, m->last_nr) :
+			     m->dirty_bytes >= m->cache_bytes / 4 * 3))) {
 				double dready = 0;
+				/*
+				 * free_at is never before the trigger here:
+				 * a cache that filled with an idle actuator
+				 * started its write-back below at once.
+				 */
 				int d = best_dirty(m, free_at, &dready);
 
 				destage(m, d, dready);
@@ -373,7 +464,8 @@ static __u64 pump(struct hdd_model *m)
 				int contig = c->op == MODEL_READ ||
 					c->arrive <= free_at;
 
-				ready = t + pos_ns(m, t, m->head, c->lba, contig);
+				ready = t + pos_ns(m, t, m->head, c->lba, contig,
+						   c->op == MODEL_WRITE);
 				if (best < 0 || ready < bready) {
 					bready = ready;
 					best = i;
@@ -390,11 +482,32 @@ static __u64 pump(struct hdd_model *m)
 			continue;
 		}
 
-		if (m->flush_tag >= 0 && !m->ndirty && !m->nwait) {
+		if (m->flush_tag >= 0 && !m->nwait && (m->log || !m->ndirty)) {
 			__u64 t = max_u64(free_at, m->flush_start);
-			__u64 d = t - m->flush_start;
+			__u64 d;
 			struct hdd_req *held = m->blocked;
 			int i, n = m->nblocked;
+
+			/*
+			 * Log what no flush has logged yet: the actuator is
+			 * busy for it, the head comes back where it was.
+			 */
+			if (m->log && !m->logging && m->unlogged) {
+				m->busy_until = t + (__u64)(m->p.log_ms * 1e6 +
+					m->unlogged * m->p.log_us * 1e3) +
+					xfer_ns(m->p.mbps,
+						m->unlogged_bytes >> 9);
+				for (i = 0; i < m->ndirty; i++)
+					m->dirty[i].unl = 0;
+				m->unlogged = 0;
+				m->unlogged_bytes = 0;
+				m->logging = 1;
+				m->n_logged++;
+				continue;
+			}
+			m->logging = 0;
+			m->last_cmd = t;	/* idle time counts from here */
+			d = t - m->flush_start;
 
 			m->env.done(m->env.ctx, m->flush_tag, t);
 			m->n_flush++;
@@ -423,8 +536,21 @@ static __u64 pump(struct hdd_model *m)
 
 		if (m->ndirty) {
 			double bready = 0;
-			int d = best_dirty(m, free_at, &bready);
+			__u64 t = free_at;
+			int d;
 
+			/*
+			 * With nobody waiting for it, write-back starts only
+			 * once no command has arrived for wb_idle_ms.
+			 */
+			if (m->wb_idle_ns) {
+				t = max_u64(t, wb_since(m));
+				if (t > now) {
+					m->env.wake(m->env.ctx, t);
+					break;
+				}
+			}
+			d = best_dirty(m, t, &bready);
 			destage(m, d, bready);
 			continue;
 		}
@@ -437,6 +563,7 @@ static __u64 pump(struct hdd_model *m)
 static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 {
 	r.arrive = now;
+	m->last_cmd = now;
 	if (m->flush_tag >= 0) {
 		m->blocked[m->nblocked++] = r;
 		return;
@@ -447,13 +574,23 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 		m->n_read++;
 		m->pend[m->npend++] = r;
 		break;
-	case MODEL_WRITE:
+	case MODEL_WRITE: {
+		int stream = r.lba == m->last_wend;
+
 		m->n_write++;
-		if (!m->cache_bytes) {
+		m->last_wend = r.lba + r.nr;
+		/*
+		 * A logging drive with no room does not make a sequential
+		 * stream wait for small writes to be written back one by
+		 * one: what continues the previous write goes straight to
+		 * the platters, as a write-through write does.
+		 */
+		if (!m->cache_bytes || (m->log && stream &&
+					(m->nwait || !cache_room(m, r.nr)))) {
 			m->pend[m->npend++] = r;
-		} else if (!m->nwait && m->dirty_bytes + (r.nr << 9) <=
-				m->cache_bytes) {
+		} else if (!m->nwait && cache_room(m, r.nr)) {
 			dirty_add(m, r.lba, r.nr, now);
+			cache_filled(m, r.nr, now);
 			m->env.done(m->env.ctx, r.tag,
 				    now + host_ns(m, r.nr));
 		} else {
@@ -461,14 +598,22 @@ static void arrive(struct hdd_model *m, struct hdd_req r, __u64 now)
 			m->wait[m->nwait++] = r;
 		}
 		break;
+	}
 	case MODEL_FLUSH:
 		if (!m->cache_bytes) {
 			m->env.done(m->env.ctx, r.tag, now);
 			break;
 		}
+		/* a logging drive with nothing new to log has nothing to do */
+		if (m->log && !m->unlogged && !m->nwait && !m->npend) {
+			m->env.done(m->env.ctx, r.tag, now);
+			m->n_flush++;
+			break;
+		}
 		m->flush_tag = r.tag;
 		m->flush_start = now;
-		m->flush_bytes_sum += m->dirty_bytes;
+		m->flush_bytes_sum += m->log ? m->unlogged_bytes :
+			m->dirty_bytes;
 		break;
 	default:
 		assert(0);
@@ -494,6 +639,19 @@ static const struct {
 		.rpm = 7200, .seek_min_ms = 0.6, .seek_avg_ms = 8.0,
 		.mbps = 205, .iface_mbps = 600, .iface_us = 30,
 		.cache_mb = 64, .ncq = 32, .stroke = 1.0, .max_wait_ms = 500,
+	} },
+	/*
+	 * An 8 TB 7200 rpm nearline SATA drive as measured through three
+	 * specimens (model not known; see README): seek and rotation as
+	 * hgst-7k8, random writes through a logging cache.
+	 */
+	{ "nearline-8t", {
+		.rpm = 7200, .seek_min_ms = 0.6, .seek_avg_ms = 7.7,
+		.mbps = 205, .iface_mbps = 600, .iface_us = 450,
+		.capacity_gb = 8000, .cache_mb = 85, .cache_ext = 5400,
+		.ncq = 32, .stroke = 1.0,
+		.max_wait_ms = 500, .wsettle_ms = 0.7,
+		.log_ms = 8, .log_us = 70, .wb_idle_ms = 50,
 	} },
 	{ "barracuda-2t", {
 		.rpm = 7200, .seek_min_ms = 1.0, .seek_avg_ms = 13.0,
@@ -521,6 +679,13 @@ int hdd_params_check(const struct hdd_params *p, __u64 max_io_bytes)
 	    p->rpm == 0 || p->mbps <= 0 || p->iface_mbps <= 0 ||
 	    p->iface_us < 0 || p->stroke <= 0 || p->ncq == 0 ||
 	    p->wb_window > HDD_WB_WINDOW_MAX ||
+	    !(p->wsettle_ms >= 0 && p->wsettle_ms <= 1e9) ||
+	    !(p->log_ms >= 0 && p->log_ms <= 1e9) ||
+	    !(p->log_us >= 0 && p->log_us <= 1e9) ||
+	    p->cache_ext > (1U << 30) ||
+	    !(p->capacity_gb >= 0 && p->capacity_gb <= 1e9) ||
+	    (p->capacity_gb > 0 && p->stroke > 1) ||
+	    !(p->wb_idle_ms >= 0 && p->wb_idle_ms <= 1e9) ||
 	    !(p->max_wait_ms >= 0 && p->max_wait_ms <= 1e9) ||
 	    (p->cache_mb && ((__u64)p->cache_mb << 20) < max_io_bytes))
 		return -EINVAL;
@@ -551,7 +716,15 @@ struct hdd_model *hdd_model_new(const struct hdd_params *p, __u64 dev_sectors,
 	m->flush_tag = -1;
 	m->period_ns = 60e9 / p->rpm;
 	m->spt = p->mbps * 1e6 * (60.0 / p->rpm) / 512;
+	m->tspt = m->spt;
+	if (p->capacity_gb > 0)	/* the device is `stroke` of that drive */
+		m->tspt = m->spt * dev_sectors /
+			(p->capacity_gb * 1e9 / 512 * p->stroke);
+	if (m->tspt > m->spt)
+		m->tspt = m->spt;
 	m->max_wait_ns = (__u64)(p->max_wait_ms * 1e6);
+	m->wb_idle_ns = (__u64)(p->wb_idle_ms * 1e6);
+	m->log = p->cache_mb && (p->log_ms > 0 || p->log_us > 0);
 	m->phase0 = (double)(p->seed % 1000003) / 1000003.0;
 	return m;
 }
@@ -589,12 +762,14 @@ int hdd_model_stats(const struct hdd_model *m, char *buf, int len)
 		"reads %llu\nwrites %llu\nflushes %llu\nflush_ms_sum %.3f\n"
 		"flush_ms_max %.3f\nflush_dirty_mb_sum %.3f\ndestaged %llu\n"
 		"cache_full_waits %llu\nblocked_by_flush %llu\n"
-		"blocked_ms_sum %.3f\ndirty_mb %.3f\n",
+		"blocked_ms_sum %.3f\ndirty_mb %.3f\nlogging_flushes %llu\n"
+		"dirty_extents %d\n",
 		(unsigned long long)m->n_read, (unsigned long long)m->n_write,
 		(unsigned long long)m->n_flush, m->flush_ns_sum / 1e6,
 		m->flush_ns_max / 1e6, m->flush_bytes_sum / 1048576.0,
 		(unsigned long long)m->n_destage,
 		(unsigned long long)m->n_cache_full,
 		(unsigned long long)m->n_blocked, m->blocked_ns_sum / 1e6,
-		m->dirty_bytes / 1048576.0);
+		m->dirty_bytes / 1048576.0,
+		(unsigned long long)m->n_logged, m->ndirty);
 }

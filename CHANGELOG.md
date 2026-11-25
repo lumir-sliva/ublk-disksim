@@ -6,6 +6,20 @@ when you report one.
 
 ## Unreleased
 
+- **hdd: a drive that logs its flushes, profile `nearline-8t`** (no
+  result of `hgst-7k8` or `barracuda-2t` moves: every new option is off
+  by default). `--log_ms` / `--log_us`: a flush logs the writes not yet
+  logged and completes, instead of writing the whole cache back;
+  `--cache_ext`: a bound on the cache in extents; `--wb_idle_ms`:
+  write-back waits for an idle drive or a full cache; `--wsettle_ms`:
+  settle added to a seek that ends in a write; `--capacity_gb`: the
+  drive the device stands for, so that requests share a track as often
+  as there and not as often as on a 4 GiB device (without it the
+  write-back rate of thousands of cached extents depends on the device
+  size: 608 IOPS on 4 GiB, 477 on 64 GiB and up). `nearline-8t` is
+  fitted to three real 8 TB drives with `REAL=`; on such a drive a
+  flush after 64 scattered writes costs 16 ms where `hgst-7k8` says
+  335 ms, and sustained random writes run at 440-480 IOPS.
 - **`REAL=<device>` for `bench/calibrate.sh`** (no result moves): the
   hdd jobs run on a real drive and `check.py` judges it by the same
   expectation file, as `calibrate_ssd.sh` already did. The jobs span
