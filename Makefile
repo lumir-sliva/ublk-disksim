@@ -30,7 +30,17 @@ tests/model_test: tests/model_test.c $(MODEL_SRCS) $(MODEL_HDRS)
 check: tests/model_test
 	./tests/model_test
 
-clean:
-	rm -f kublk tests/model_test
+# the same tests under the address and undefined-behaviour sanitizers,
+# fewer randomized runs: an array one entry short passes `make check`
+tests/model_test_asan: tests/model_test.c $(MODEL_SRCS) $(MODEL_HDRS)
+	$(CC) -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all \
+		-Iinclude -I. -DMODEL_CHECK_SPTF -o $@ tests/model_test.c \
+		$(MODEL_SRCS) -lm
 
-.PHONY: check clean
+check-asan: tests/model_test_asan
+	./tests/model_test_asan 10
+
+clean:
+	rm -f kublk tests/model_test tests/model_test_asan
+
+.PHONY: check check-asan clean

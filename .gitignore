@@ -1,3 +1,4 @@
 kublk
 *.o
 tests/model_test
+tests/model_test_asan

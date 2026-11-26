@@ -17,6 +17,7 @@ the model did, and fit it to a drive you care about.
 ```bash
 make            # produces ./kublk
 make check      # model tests on a virtual clock (no root, no ublk)
+make check-asan # the same under ASan + UBSan, fewer randomized runs
 ./kublk help    # all targets and their options
 ```
 
