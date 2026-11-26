@@ -6,6 +6,11 @@ when you report one.
 
 ## Unreleased
 
+- **hdd: zones, `--mbps_inner`** (off by default; `nearline-8t` moves:
+  sequential rates now 265 MB/s at the start of the device to 128 at
+  the end instead of 205 throughout, its other rows within 4%). The
+  rate follows the radius, so its square falls linearly with the LBA,
+  and tracks shorten with it.
 - **hdd: a drive that logs its flushes, profile `nearline-8t`** (no
   result of `hgst-7k8` or `barracuda-2t` moves: every new option is off
   by default). `--log_ms` / `--log_us`: a flush logs the writes not yet

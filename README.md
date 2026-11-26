@@ -57,13 +57,14 @@ What it models (see the header of `hdd_model.c`):
   a burst is taken at interface speed until the cache is full and at
   the write-back rate after that; a write that continues the previous
   one and finds no room goes straight to the platters;
+- optionally zones (`--mbps_inner`): the transfer rate and the track
+  length fall with the radius from `--mbps` at the start of the drive;
 - `--cache_mb 0` = write-through (write cache off, or a controller that
   hides it): no volatile cache is advertised, so the kernel sends no
   flushes, and every write pays mechanical time.
 
-Not modelled: zoned transfer rates (one rate, one track size), read cache
-and read-ahead beyond "sequential costs nothing", firmware limits on dirty
-data, destage idle timers. The 3/4 threshold and the one-for-one turns of
+Not modelled: read cache and read-ahead beyond "sequential costs
+nothing". The 3/4 threshold and the one-for-one turns of
 forced write-back, and the 500 ms age limit, are assumptions; drives
 don't publish theirs.
 
@@ -75,7 +76,8 @@ Parameters (`kublk add -t hdd ... --<name> <value>`):
 | `--rpm` | spindle speed | 7200 | 7200 | 7200 |
 | `--seek_min_ms` | track-to-track seek | 0.6 | 0.6 | 1.0 |
 | `--seek_avg_ms` | average random seek | 8.0 | 7.7 (fitted) | 13.0 (fitted) |
-| `--mbps` | media transfer rate | 205 | 205 | 150 (fitted) |
+| `--mbps` | media transfer rate (on the outermost track with `--mbps_inner`) | 205 | 265 (fitted) | 150 (fitted) |
+| `--mbps_inner` | zones: rate on the innermost track, 0 = one rate | 0 | 128 (fitted) | 0 |
 | `--iface_mbps` | host link rate (cached writes) | 600 | 600 | 600 |
 | `--iface_us` | per-command overhead (cached writes) | 30 | 450 (fitted) | 30 |
 | `--cache_mb` | volatile write cache, 0 = write-through | 64 | 85 (fitted) | 1 (fitted) |
@@ -109,9 +111,12 @@ flush costs about 8 ms plus 0.09 ms per write since the last one, not
 the positioning of each; 15 s of idle give the fast writes back. The
 profile is that mechanism with the numbers fitted: a cache bounded in
 extents, flushes that log, write-back by shortest positioning with a
-write settle. What it does not have yet: transfer rates by zone (the
-drive reads 265 MB/s outside, 128 inside), and the drive's preference
-for a sequential writer over readers.
+write settle. Its transfer rate and track length follow the radius from
+265 MB/s at the start of the drive to 128 at the end (constant bits per
+inch: the square of the rate falls linearly with the LBA; mean 204.5).
+Fitted to the two ends, the curve gives 238 / 208 / 173 MB/s at 25 / 50
+/ 75% where the drives read 251 / 222 / 184: about 6% low. What it does
+not have yet: the drive's preference for writers over readers.
 
 `barracuda-2t` is fitted to one real Seagate BarraCuda ST2000DM006 (2 TB
 SATA, 7200 rpm) rather than its spec sheet, which it doesn't meet: random
@@ -158,7 +163,7 @@ writes not yet in place:
 | ... fsync every 8 / 64 writes: flush | 12.6 / 17.6 ms | 11.4-11.7 / 15.9-16.3 ms |
 | ... fsync every 64 writes: writes | 424 IOPS | 397-410 |
 | 4K read QD1 next to a write+fsync QD1 job | 45.7 IOPS | 44.0-44.6 |
-| 1M sequential read / write QD1 | 187 / 196 MB/s | 259-279 on the outer tracks (no zones in the model) |
+| 1M sequential read / write QD1 | 185 / 189 MB/s over the whole 4 GiB device, several times | 259-279 over the first 16 GB; by position 265 / 251 / 222 / 184 / 128 at 0 / 25 / 50 / 75 / 99% (model 265 / 238 / 208 / 173 / 130) |
 | 4K read QD4 next to a 4K random writer QD1 | reads 98, writes 101 IOPS | reads 30-32, writes 309-322 |
 | 4K read QD1 next to a 1M sequential writer QD4 | reads 3 IOPS, writes 152 MB/s | reads 10-12 IOPS (p99 1.5-6 s), writes 187-215 MB/s |
 

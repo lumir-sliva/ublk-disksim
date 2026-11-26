@@ -44,7 +44,10 @@
  *  - write-through (cache_mb = 0): no volatile cache is advertised, so the
  *    kernel never sends flushes and every write pays mechanical time.
  *
- * Not modelled: zoned transfer rates (one rate, one track size), read
+ *  - optionally zones (mbps_inner): rate and track length fall with the
+ *    radius from mbps at the start of the drive to mbps_inner at its end;
+ *
+ * Not modelled: read
  * cache / read-ahead beyond "sequential costs no positioning", thermal
  * recalibration, a fixed cost per flush.
  * Calibrate against the drive you want to imitate before trusting
@@ -73,6 +76,42 @@ static double phase_at(struct hdd_model *m, double t)
 	return x - floor(x);
 }
 
+/* zoned: rate and track length at `lba`, as a fraction of the outermost */
+static double zone_f(const struct hdd_model *m, __u64 lba)
+{
+	double x = 1 - m->za * (double)lba;
+
+	return sqrt(x > 0 ? x : 0);
+}
+
+/*
+ * Tracks from the start of the device to `lba`: the integral of
+ * 1 / (track length). Its fraction is the sector's angle.
+ */
+static double tracks_to(const struct hdd_model *m, double lba)
+{
+	double x;
+
+	if (!(m->za > 0))
+		return lba / m->spt;
+	/* (1 - sqrt(x)) / za, without the cancellation when za * lba is small */
+	x = 1 - m->za * lba;
+	return 2 * lba / (m->spt * (1 + sqrt(x > 0 ? x : 0)));
+}
+
+/*
+ * Media transfer of nr sectors at lba. Zoned: the time the platter takes
+ * to turn through them, so that a transfer ends where the angle of its
+ * last sector says.
+ */
+static __u64 media_ns(const struct hdd_model *m, __u64 lba, __u64 nr)
+{
+	if (!(m->za > 0))
+		return (__u64)((double)(nr << 9) / (m->p.mbps * 1e6) * 1e9);
+	return (__u64)((tracks_to(m, (double)(lba + nr)) -
+			tracks_to(m, (double)lba)) * m->period_ns);
+}
+
 /* seek time for a distance of `d` sectors to another track */
 static double seek_ns(struct hdd_model *m, double d)
 {
@@ -91,7 +130,8 @@ static double seek_ns(struct hdd_model *m, double d)
  * when the previous transfer ended. Otherwise: seek (none within the same
  * track), then wait for the sector to come round; for a write-through
  * write arriving after the previous one completed, that is most of a
- * revolution, as on a real drive. Sector angle is lba / spt, so a
+ * revolution, as on a real drive. Sector angle is the fraction of
+ * tracks_to(lba) (lba / spt without zones), so a
  * transfer ending at lba e ends at phase e / spt, and choosing the minimum
  * of this over queued requests is rotational position ordering.
  */
@@ -99,15 +139,24 @@ static double pos_ns(struct hdd_model *m, double t, __u64 from, __u64 to,
 		     int contig, int wr)
 {
 	double seek = 0, ang, rot;
+	int diff;
 
 	if (from == to && contig)
 		return 0;
-	if ((__u64)(from / m->tspt) != (__u64)(to / m->tspt)) {
+	if (m->za > 0) {
+		double k = m->spt / m->tspt;
+
+		ang = tracks_to(m, (double)to);
+		diff = (__u64)(tracks_to(m, (double)from) * k) != (__u64)(ang * k);
+	} else {
+		diff = (__u64)(from / m->tspt) != (__u64)(to / m->tspt);
+		ang = (double)to / m->spt;
+	}
+	if (diff) {
 		seek = seek_ns(m, fabs((double)to - (double)from));
 		if (wr)
 			seek += m->p.wsettle_ms * 1e6;
 	}
-	ang = (double)to / m->spt;
 	ang -= floor(ang);
 	rot = ang - phase_at(m, t + seek);
 	if (rot < 0)
@@ -328,11 +377,15 @@ static int best_dirty(struct hdd_model *m, __u64 free_at, double *bready)
 static void destage(struct hdd_model *m, int i, double ready)
 {
 	struct hdd_ext *x = &m->dirty[i];
-	__u64 nr = x->nr, track = (__u64)m->spt;
+	__u64 nr = x->nr, track = (__u64)(m->za > 0 ?
+		m->spt * zone_f(m, x->lba) : m->spt);
+
+	if (m->za > 0 && !track)
+		track = 1;
 
 	if (track && nr > track)
 		nr = track;
-	m->busy_until = (__u64)ready + xfer_ns(m->p.mbps, nr);
+	m->busy_until = (__u64)ready + media_ns(m, x->lba, nr);
 	m->head = x->lba + nr;
 	m->destaging = nr << 9;
 	m->destage_ext = nr == x->nr;
@@ -476,7 +529,8 @@ static __u64 pump(struct hdd_model *m)
 			r = m->pend[best];
 			memmove(m->pend + best, m->pend + best + 1,
 				(--m->npend - best) * sizeof(*m->pend));
-			m->busy_until = (__u64)bready + xfer_ns(m->p.mbps, r.nr);
+			m->busy_until = (__u64)bready +
+				media_ns(m, r.lba, r.nr);
 			m->head = r.lba + r.nr;
 			m->env.done(m->env.ctx, r.tag, m->busy_until);
 			continue;
@@ -647,8 +701,8 @@ static const struct {
 	 */
 	{ "nearline-8t", {
 		.rpm = 7200, .seek_min_ms = 0.6, .seek_avg_ms = 7.7,
-		.mbps = 205, .iface_mbps = 600, .iface_us = 450,
-		.capacity_gb = 8000, .cache_mb = 85, .cache_ext = 5400,
+		.mbps = 265, .mbps_inner = 128, .iface_mbps = 600,
+		.iface_us = 450, .capacity_gb = 8000, .cache_mb = 85, .cache_ext = 5400,
 		.ncq = 32, .stroke = 1.0,
 		.max_wait_ms = 500, .wsettle_ms = 0.7,
 		.log_ms = 8, .log_us = 70, .wb_idle_ms = 50,
@@ -684,6 +738,8 @@ int hdd_params_check(const struct hdd_params *p, __u64 max_io_bytes)
 	    !(p->log_us >= 0 && p->log_us <= 1e9) ||
 	    p->cache_ext > (1U << 30) ||
 	    !(p->capacity_gb >= 0 && p->capacity_gb <= 1e9) ||
+	    !(p->mbps_inner >= 0 && p->mbps_inner <= p->mbps) ||
+	    (p->mbps_inner > 0 && p->stroke > 1) ||
 	    (p->capacity_gb > 0 && p->stroke > 1) ||
 	    !(p->wb_idle_ms >= 0 && p->wb_idle_ms <= 1e9) ||
 	    !(p->max_wait_ms >= 0 && p->max_wait_ms <= 1e9) ||
@@ -722,6 +778,10 @@ struct hdd_model *hdd_model_new(const struct hdd_params *p, __u64 dev_sectors,
 			(p->capacity_gb * 1e9 / 512 * p->stroke);
 	if (m->tspt > m->spt)
 		m->tspt = m->spt;
+	/* the device is the outer `stroke` of the drive */
+	if (p->mbps_inner > 0 && p->mbps_inner < p->mbps)
+		m->za = (1 - (p->mbps_inner / p->mbps) *
+			 (p->mbps_inner / p->mbps)) * p->stroke / dev_sectors;
 	m->max_wait_ns = (__u64)(p->max_wait_ms * 1e6);
 	m->wb_idle_ns = (__u64)(p->wb_idle_ms * 1e6);
 	m->log = p->cache_mb && (p->log_ms > 0 || p->log_us > 0);

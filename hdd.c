@@ -161,6 +161,8 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->seek_avg_ms = strtod(v, NULL);
 		else if (!strcmp(k, "--mbps"))
 			p->mbps = strtod(v, NULL);
+		else if (!strcmp(k, "--mbps_inner"))
+			p->mbps_inner = strtod(v, NULL);
 		else if (!strcmp(k, "--iface_mbps"))
 			p->iface_mbps = strtod(v, NULL);
 		else if (!strcmp(k, "--iface_us"))
@@ -199,7 +201,8 @@ static void hdd_usage(const struct ublk_tgt_ops *ops)
 {
 	printf("\thdd: [--profile hgst-7k8|nearline-8t|barracuda-2t] [--rpm N] "
 	       "[--seek_min_ms X] [--seek_avg_ms X]\n"
-	       "\t     [--mbps X] [--iface_mbps X] [--iface_us X] "
+	       "\t     [--mbps X] [--mbps_inner X (0 = no zones)] "
+	       "[--iface_mbps X] [--iface_us X]\n\t     "
 	       "[--cache_mb N (0 = write-through)]\n"
 	       "\t     [--ncq N] [--wb_window N (0 = whole cache, max 64)] "
 	       "[--max_wait_ms X (0 = none)]\n"

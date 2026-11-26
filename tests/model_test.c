@@ -1033,6 +1033,198 @@ static void hdd_log_cache(void)
 	}
 }
 
+/*
+ * Zones: a sequential read runs at the outer rate at the start of the
+ * device, at the inner rate at its end, and at sqrt((Ro^2 + Ri^2) / 2) in
+ * the middle; a read that continues the last one never waits for the
+ * platter, wherever it is.
+ */
+static void hdd_zones(void)
+{
+	struct hdd_params p = hdd_p();
+	static const double at[] = { 0, 0.5, 0.999 };
+	struct sim s;
+	int i, k;
+
+	p.mbps = 265;
+	p.mbps_inner = 128;
+	cur_test = "hdd zones: the transfer rate follows the radius";
+	for (i = 0; i < 3; i++) {
+		__u64 lba = (__u64)(at[i] * (HDD_SECTORS - 40000)) & ~7ULL, t0 = 0;
+		double want = sqrt(p.mbps * p.mbps - at[i] *
+				   (HDD_SECTORS - 40000.0) / HDD_SECTORS *
+				   (p.mbps * p.mbps - p.mbps_inner * p.mbps_inner));
+		double got;
+
+		hdd_up(&s, &p, 32);
+		for (k = 0; k < 17; k++) {	/* 16 MiB after the first */
+			sim_submit(&s, MODEL_READ, lba + k * 2048ULL, 2048, NULL);
+			sim_drain(&s, s.now + SEC);
+			if (!k)
+				t0 = s.now;
+		}
+		got = 16 * 1.048576 / ((s.now - t0) / 1e9);
+		CHECK(fabs(got - want) < want * 0.01,
+		      "sequential read at %.1f%% of the device %.1f MB/s, "
+		      "expected %.1f", at[i] * 100, got, want);
+		sim_free(&s);
+	}
+
+	/* the outer half of the drive: the rate at its end is the middle one */
+	cur_test = "hdd zones: with --stroke the device is the outer part of the drive";
+	p.stroke = 0.5;
+	{
+		__u64 lba = (HDD_SECTORS - 40000) & ~7ULL, t0 = 0;
+		double want = sqrt(p.mbps * p.mbps - 0.5 * lba / HDD_SECTORS *
+				   (p.mbps * p.mbps - p.mbps_inner * p.mbps_inner));
+		double got;
+
+		hdd_up(&s, &p, 32);
+		for (k = 0; k < 17; k++) {
+			sim_submit(&s, MODEL_READ, lba + k * 2048ULL, 2048, NULL);
+			sim_drain(&s, s.now + SEC);
+			if (!k)
+				t0 = s.now;
+		}
+		got = 16 * 1.048576 / ((s.now - t0) / 1e9);
+		CHECK(fabs(got - want) < want * 0.01,
+		      "at the end of a half-stroke device %.1f MB/s, expected %.1f",
+		      got, want);
+		sim_free(&s);
+	}
+	p.stroke = 1.0;
+
+	/*
+	 * Near the inner edge a track is about half the outermost. A read,
+	 * then one further on: the wait is the angle between them on the
+	 * local track, and there is a seek if and only if a local track
+	 * boundary lies between them.
+	 */
+	cur_test = "hdd zones: angle and track boundaries follow the local track length";
+	{
+		__u64 base = (__u64)(0.97 * HDD_SECTORS) & ~7ULL, a, step;
+		double f, loc, trk, t_a, t_b, want;
+		int r;
+
+		hdd_up(&s, &p, 32);
+		f = sqrt(1 - s.h->za * (double)base);
+		loc = s.h->spt * f;		/* local sectors per track */
+		CHECK(f > 0.48 && f < 0.52, "track factor at 97%% is %.3f", f);
+		/* the first sector of a local track: where tracks_to is whole */
+		trk = floor(2 * base / (s.h->spt * (1 + f))) + 1;
+		a = (__u64)((trk / (2 / (s.h->za * s.h->spt))) *
+			    (2 - trk / (2 / (s.h->za * s.h->spt))) / s.h->za);
+		a = (a + 16) & ~7ULL;		/* just inside that track */
+		step = (__u64)(loc / 4) & ~7ULL;	/* a quarter turn on */
+		r = sim_submit(&s, MODEL_READ, a, 8, NULL);
+		sim_drain(&s, s.now + SEC);
+		t_a = (double)s.now;
+		r = sim_submit(&s, MODEL_READ, a + 8 + step, 8, NULL);
+		sim_drain(&s, s.now + SEC);
+		t_b = (double)s.rq[r].done_at;
+		want = (step + 8) / loc * rev_ns(&p);
+		CHECK(fabs((t_b - t_a) - want) < want * 0.01,
+		      "a quarter of a local track on took %.3f ms, expected %.3f",
+		      (t_b - t_a) / 1e6, want / 1e6);
+		sim_free(&s);
+
+		/*
+		 * 64 sectors on, a rotation shorter than any seek: within a
+		 * local track no seek; across its boundary one (and then the
+		 * sector has passed); and with capacity_gb one even within.
+		 */
+		for (i = 0; i < 3; i++) {
+			__u64 from = i == 1 ? a - 64 : a;
+
+			p.capacity_gb = i == 2 ? 8000 : 0;
+			hdd_up(&s, &p, 32);
+			r = sim_submit(&s, MODEL_READ, from, 8, NULL);
+			sim_drain(&s, s.now + SEC);
+			t_a = (double)s.now;
+			r = sim_submit(&s, MODEL_READ, from + 8 + 64, 8, NULL);
+			sim_drain(&s, s.now + SEC);
+			t_b = (double)s.rq[r].done_at;
+			if (!i)
+				CHECK(t_b - t_a < p.seek_min_ms * 1e6 / 2,
+				      "64 sectors on in a local track took %.3f ms",
+				      (t_b - t_a) / 1e6);
+			else
+				CHECK(t_b - t_a >= p.seek_min_ms * 1e6,
+				      "64 sectors on, %s, took %.3f ms: no seek",
+				      i == 1 ? "across a local track boundary" :
+				      "with capacity_gb 8000", (t_b - t_a) / 1e6);
+			sim_free(&s);
+		}
+		p.capacity_gb = 0;
+	}
+
+	/*
+	 * Write-back near the inner edge moves one local track at a time at
+	 * the local rate; with a settle, pieces that follow each other
+	 * don't pay it.
+	 */
+	cur_test = "hdd zones: write-back by local tracks at the local rate";
+	{
+		__u64 base = (__u64)(0.97 * HDD_SECTORS) & ~7ULL, end[2];
+		double f, want;
+
+		p.wsettle_ms = 0.7;
+		for (i = 0; i < 2; i++) {
+			hdd_up(&s, &p, 32);
+			sim_submit(&s, MODEL_WRITE, base, 8192 << i, NULL);
+			sim_run_until(&s, s.now + 5 * SEC);
+			CHECK(!s.h->ndirty, "not written back");
+			f = sqrt(1 - s.h->za * (double)base);
+			if (!i)
+				CHECK(s.h->n_destage == (__u64)ceil(8192 /
+				      floor(s.h->spt * f)),
+				      "4 MiB written back in %llu pieces, local "
+				      "track %.0f sectors",
+				      (unsigned long long)s.h->n_destage,
+				      s.h->spt * f);
+			end[i] = s.h->busy_until;
+			sim_free(&s);
+		}
+		/* the second 4 MiB: transfer only */
+		want = 4.0 * 1048576 / (p.mbps * f * 1e6) * 1e9;
+		CHECK(fabs((double)(end[1] - end[0]) - want) < want * 0.03,
+		      "4 MiB more written back in %.2f ms, expected %.2f",
+		      (end[1] - end[0]) / 1e6, want / 1e6);
+		p.wsettle_ms = 0;
+	}
+
+	cur_test = "hdd zones: parameters";
+	p.mbps_inner = p.mbps + 1;
+	CHECK(hdd_params_check(&p, 1 << 20), "mbps_inner above mbps accepted");
+	p.mbps_inner = 128;
+	p.stroke = 2;
+	CHECK(hdd_params_check(&p, 1 << 20), "zones with stroke 2 accepted");
+	p.stroke = 1.0;
+	CHECK(!hdd_params_check(&p, 1 << 20), "a valid zoned profile refused");
+
+	cur_test = "hdd zones: without mbps_inner nothing changes with the LBA";
+	p.mbps_inner = 0;
+	{
+		__u64 d[2];
+
+		for (i = 0; i < 2; i++) {
+			__u64 lba = i ? HDD_SECTORS - 40000 : 0, t0 = 0;
+
+			hdd_up(&s, &p, 32);
+			for (k = 0; k < 5; k++) {
+				sim_submit(&s, MODEL_READ, lba + k * 2048ULL, 2048, NULL);
+				sim_drain(&s, s.now + SEC);
+				if (!k)
+					t0 = s.now;
+			}
+			d[i] = s.now - t0;
+			sim_free(&s);
+		}
+		CHECK(d[0] == d[1], "4 MiB took %llu ns at the start, %llu at "
+		      "the end", (unsigned long long)d[0], (unsigned long long)d[1]);
+	}
+}
+
 static void hdd_wb_window(void)
 {
 	struct hdd_params p = hdd_p();
@@ -1866,11 +2058,14 @@ static void hdd_random(int runs)
 			p.wsettle_ms = 0.7;
 		if (rnd_below(2))
 			p.capacity_gb = 8000;
+		if (rnd_below(2))
+			p.mbps_inner = p.mbps / (1.5 + rnd_below(3));
 		p.seed = rnd();
 		hdd_up(&s, &p, 32);
 		s.deep_check = 1;
 		full = s.h->seek_full_ms * 1e6 + p.wsettle_ms * 1e6;
-		op = full + rev_ns(&p) + xfer_ns_of(p.mbps, 1 << 20);
+		op = full + rev_ns(&p) + xfer_ns_of(p.mbps_inner > 0 ?
+						     p.mbps_inner : p.mbps, 1 << 20);
 		wb = full + 2 * rev_ns(&p);	/* a forced write-back: one track */
 		/*
 		 * Once past the limit a read waits at most for the requests
@@ -1934,6 +2129,7 @@ int main(int argc, char **argv)
 	hdd_cached_write_and_flush();
 	hdd_writeback_by_track();
 	hdd_log_cache();
+	hdd_zones();
 	hdd_wb_window();
 	hdd_writer_next_to_readers();
 	hdd_age_limit();

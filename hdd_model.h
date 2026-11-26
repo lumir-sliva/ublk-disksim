@@ -10,7 +10,14 @@ struct hdd_params {
 	unsigned	rpm;
 	double		seek_min_ms;	/* track to track */
 	double		seek_avg_ms;	/* random, uniform over the stroke */
-	double		mbps;		/* media transfer */
+	double		mbps;		/* media transfer (on the outermost track if zoned) */
+	/*
+	 * Zones: > 0 = the rate on the innermost track of the drive. In
+	 * between it follows the radius (constant bits per inch): rate^2
+	 * falls linearly with the LBA, and a track holds what one
+	 * revolution transfers there.
+	 */
+	double		mbps_inner;
 	double		iface_mbps;	/* host link (cached writes) */
 	double		iface_us;	/* per-command overhead (cached writes) */
 	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
@@ -63,6 +70,7 @@ struct hdd_model {
 	double period_ns;		/* one revolution */
 	double spt;			/* sectors per track, from media rate and rpm */
 	double tspt;			/* device sectors per track of the drive stood for */
+	double za;			/* zoned: 1 - (inner/outer)^2 per device sector */
 	double phase0;			/* platter phase at t = 0, from the seed */
 	__u64 max_wait_ns;		/* 0 = no age limit */
 	__u64 dev_sectors;
