@@ -55,6 +55,8 @@ unit:
 | ssd | write history | a chunk written in one piece reads as one page; a 4K random write into it makes it 16 page reads (one die: exact sums); a covering write or a completed stream restores it, a half-written stream doesn't; `history rnd` starts scattered |
 | ssd | sequential writes over scattered data | on a fully scattered drive dies × page / (unit × `waf`); a second pass over the same range no faster; with half the drive rewritten sequentially dies × page / (unit × (1 + (`waf` − 1) / 2)), ±5% |
 | ssd | GC pool | after 1 s idle, 64 MiB of random writes cost (pool + rest × `waf`) / page program units, ±3%; the pool stops at `gc_pool_mb`, fills only after `gc_idle_s`; none without `gc_mbps` |
+| ssd | write group commit (`wgroup_us`, `wcmd_us`) | a lone write costs what it does without; of eight at once the first is alone and the seven complete together after `wgroup_us` + 7 `wcmd_us` more; a write arriving as a group starts is in it, 1 ns later in the next; a write that waited for buffer room is in the next group to start, and writes that get room at the same moment are one group; a group never starts before its first write's data, whatever the order of arrival; reads are not grouped; a SATA flush waits for a write not yet in a group and the writes it releases form groups from then; 2, 8, 32 writers take 2 `wgroup_us` + n `wcmd_us` each, ±1%; `floor_us` comes off grouped writes too; a group of one must fit in `iface_us` |
+| ssd | late wake-ups | 20,000 requests at fixed times (bursts, a buffer small enough that writes wait for room, write groups off and on): every completion time is the same with wake-ups delivered on time, 30 µs, 150 µs and 3 ms late |
 | ssd | FLUSH | PLP: `flush_us`; nothing written since the last: free; no PLP: one page program + `flush_us` |
 | ssd | SATA vs NVMe FLUSH | SATA holds a read behind it; NVMe doesn't |
 | ssd | `vwc 0` | FLUSH does nothing |
@@ -315,9 +317,21 @@ ublk device at ~85K IOPS.
   after 60 / 150 / 300 / 1200 s of idle wrote 0.8 / 37 / 43 / 41 GB above
   the steady 78K, at ~200K. `--gc_idle_s 58 --gc_mbps 400 --gc_pool_mb
   41000` fits that (the 1200 s value was predicted before it was read:
-  43 GB ± 30%). The model spends the pool at its program rate (~380K),
-  twice the drive's ~200K, and drops to steady at once where the drive
-  slides down over ~80 s.
+  43 GB ± 30%). With the write groups below the model spends the pool
+  at the drive's rate (before: at its program rate, ~380K); it still
+  drops to steady at once where the drive slides down over ~80 s.
+- Random writes on a drive with erased space to spare (a second
+  specimen, formatted), one fio job, 4K: QD 1 / 2 / 4 / 8 / 16 take
+  24.3 / 43.2 / 50.6 / 71.3 / 116 µs (40.5K / 46.0K / 78.5K / 112K /
+  137K IOPS): the second write in flight costs 19 µs, each further one
+  ~5. Four jobs at QD 8 / 32: 165K / 202K. Two jobs at QD1 are
+  bimodal (p50 24 µs, p99 69): they only sometimes meet. 8K writes run
+  at 184K and 16K at 93K (the program rate, 1.5 GB/s), so the limit
+  counts commands, not data. That is a group commit with a cost per
+  group: `wgroup_us 16.3`, `wcmd_us 4.8` on the virtual clock give
+  25.5 / 42.2 / 51.8 / 71.0 / 109 µs, and 172K / 198K at 32 / 128
+  writes in flight (on a ublk device 26.8 / 42.7 µs at QD 1 / 2; the
+  calibration checks the QD2 row).
 
 ## 4. Integrity: `bench/integrity.sh`
 
@@ -403,6 +417,7 @@ depend on how full the drive is.
 
 ```bash
 make check                                   # model tests, anywhere
+make check-asan                              # the same under ASan + UBSan
 sudo bench/integrity.sh                      # data integrity
 sudo bench/calibrate.sh 30                   # hgst-7k8, checked
 sudo bench/calibrate.sh 30 --cache_mb 0      # checked against hgst-7k8-wt

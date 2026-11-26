@@ -225,6 +225,29 @@ Dies, a host link, a write buffer.
   the last one, up to `gc_pool_mb`; computed lazily when the next page closes. The
   GC bytes of a page come out of it first, so a page covered by it
   costs one unit. The refill takes no die time.
+- **Write group commit** (`wgroup_us`, `wcmd_us`; `micron-7300` only):
+  a write whose data is in the buffer joins the writes waiting to be
+  acknowledged. A group starts when the one before it has ended, or
+  when the first waiting write's data arrives if that is later, takes
+  every write that has arrived by then, lasts `wgroup_us` + `wcmd_us`
+  per write, and completes them all `iface_us` − `wgroup_us` −
+  `wcmd_us` after its end, so that a write alone costs `iface_us` as
+  before. A closed-loop writer completes with its group and returns
+  during the next, so it waits out that one and its own: two groups
+  that hold all n writers, 2 `wgroup_us` + n `wcmd_us`. Without a cost
+  per group nothing would make writers wait for one, and n = 4 to 8
+  would run 50-60% fast. A SATA flush waits for writes not yet in a
+  group; a queued (NVMe) flush with PLP does not, as before.
+  The model wakes at each group start and decides the group's
+  completions then, which leaves the host `iface_us` − `floor_us` (and
+  `wcmd_us` per further write) to deliver them: with a floor near
+  `iface_us` they come late, which `late_us_p99` shows. To spare a
+  wake-up per write, one whose data is still on the link when it is
+  submitted, and which will find the controller idle, is made a group
+  of one at once; a later write whose data gets in first (through a gap
+  on the link) then waits for that group. Writes that get buffer room at
+  a past moment always go through the queue, so that the groups do not
+  depend on when the model was called.
 - **FLUSH:** with `plp 1` the buffer is durable and a flush costs
   `flush_us`. With `plp 0` the partly filled page is closed and the flush
   waits until every buffered page is programmed, plus `flush_us`. A flush

@@ -29,6 +29,8 @@ struct ssd_params {
 	double		gc_pool_mb;	/* erased space GC keeps ready, 0: none */
 	double		gc_mbps;	/* GC refills it while idle, MB/s */
 	double		gc_idle_s;	/* ... once idle this long */
+	double		wgroup_us;	/* write group commit: per group ... */
+	double		wcmd_us;	/* ... and per write in it; both 0: none */
 	double		floor_us;	/* host overhead to subtract */
 	char		stats[256];	/* stats file, rewritten once a second */
 };
@@ -42,6 +44,7 @@ struct ssd_req {
 	__u64 t;			/* reached the model (later if held by a flush) */
 	__u64 link_end;			/* write: data is on the drive */
 	__u64 gc_bytes;			/* write: bytes GC must copy to free */
+	__u64 ack;			/* write: in the buffer, awaiting its group */
 };
 
 /* a closed buffer page waiting to be programmed or being programmed */
@@ -69,6 +72,7 @@ struct ssd_model {
 	__u64 page_bytes, buf_cap;
 	__u64 tr_ns, cmd_ns, iface_ns, flush_ns, floor_ns, unit_ns, susp_ns;
 	__u64 tr_step_ns, page_xfer_ns, gc_idle_ns;
+	__u64 wgroup_ns, wcmd_ns, wrest_ns;	/* wrest: iface less a group of one */
 	unsigned depth;
 	__u64 now;
 
@@ -119,6 +123,14 @@ struct ssd_model {
 	struct ssd_req *wait;		/* writes waiting for buffer space, FIFO */
 	int nwait;
 
+	/*
+	 * Group commit: buffered writes not in a group yet, the end of the
+	 * last group started, and when the next one can start, if any
+	 */
+	struct ssd_req *ack;
+	int nack;
+	__u64 ack_end, next_ack;
+
 	/* SATA: the one pending non-queued flush and what it holds back */
 	int sflush_tag;
 	struct ssd_req sflush;
@@ -136,7 +148,7 @@ struct ssd_model {
 
 	/* stats */
 	__u64 n_read, n_write, n_flush, n_buf_full, n_blocked, n_read_wait;
-	__u64 n_read_susp, n_frag_reads;
+	__u64 n_read_susp, n_frag_reads, n_groups;
 	__u64 seq_bytes, rnd_bytes;
 	double units_done;
 	__u64 flush_ns_sum, flush_ns_max, blocked_ns_sum, read_wait_ns_sum;

@@ -149,6 +149,9 @@ run randread-qd32    --rw=randread --bs=4k --iodepth=32
 run seqread-128k     --rw=read --bs=128k --iodepth=32
 run seqwrite-128k    --rw=write --bs=128k --iodepth=32
 run randwrite-qd1    --rw=randwrite --bs=4k --iodepth=1
+# two writes in flight: a drive that acknowledges writes in groups is
+# hardly faster here than at QD1
+run randwrite-qd2    --rw=randwrite --bs=4k --iodepth=2
 run randwrite-qd32   --rw=randwrite --bs=4k --iodepth=32
 f0=$(flushes)
 run randwrite-fsync  --rw=randwrite --bs=4k --iodepth=1 --fsync=1

@@ -296,6 +296,7 @@ free with power-loss protection, milliseconds without it.
 | `buffer_mb` | data in the write buffer right now |
 | `gc_pool_mb` | erased space garbage collection has ready, as of the last page closed |
 | `gc_pool_used_mb` | garbage collection the pool has covered so far (in page bytes) |
+| `write_groups` | groups of writes acknowledged together (`--wgroup_us`, `--wcmd_us`); writes / groups = mean group size |
 
 **Calibrate:**
 
@@ -346,7 +347,11 @@ steady-state (full drive) random write IOPS. With the drive at hand, a
 QD1 random read with fio's per-I/O log
 (`--write_lat_log`, `--log_offset=1`) shows whether its reads have page
 type modes: on TLC three, a third each, spaced 1 : 3 steps
-(`tr_step_us`, with `tr_us` the fastest). `flush_us` comes from a
+(`tr_step_us`, with `tr_us` the fastest). 4K random writes at QD 1, 2
+and 16 on a drive with erased space show whether it acknowledges
+writes in groups (QD2 hardly faster than QD1): `wcmd_us` is the latency
+added per write in flight beyond two, `wgroup_us` half of what the QD2
+latency exceeds 2 `wcmd_us` by. `flush_us` comes from a
 measured 4K write + fsync at QD1, which
 Ceph users publish for many drives. Start from the nearest `--profile`
 and override what differs (kublk takes at most 15 target options), then

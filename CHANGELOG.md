@@ -6,6 +6,17 @@ when you report one.
 
 ## Unreleased
 
+- **ssd: write group commit, `--wgroup_us` and `--wcmd_us`**
+  (`micron-7300`: 16.3 and 4.8; the other profiles: 0, nothing moves).
+  The controller acknowledges writes in groups that take `wgroup_us`
+  plus `wcmd_us` per write. `micron-7300`: a write alone is unchanged
+  (25.5 us); 2 / 4 / 8 / 16 / 32 writes in flight take 42 / 52 / 71 /
+  109 / 186 us each where they took 25.5 before; with erased space to
+  spare (`--gc_mbps`) random writes level off near 200K IOPS instead
+  of 380K. Steady-state random writes (75K IOPS, the datasheet's QD32
+  figure) and sequential rates are unchanged, but their latency at low
+  queue depth is not: anything that keeps a few writes in flight on
+  `micron-7300` gets slower. New stats line `write_groups`.
 - **hdd: `--wb_turns`, `--wb_queue`** (off by default; `nearline-8t`
   moves where readers meet a writer with the cache full: a QD4 reader
   next to a random writer gets 31 reads per second instead of 98, the

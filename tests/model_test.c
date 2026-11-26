@@ -73,6 +73,7 @@ struct job;
 
 struct rq {
 	int busy, has_done, op;
+	long id;
 	__u64 lba, nr, sub, done_at, set_at;
 	struct job *owner;
 };
@@ -88,6 +89,11 @@ struct sim {
 	__u64 read_bound;
 	/* check cache accounting after every model call (slow) */
 	int deep_check;
+	/* deliver every wake-up this much late, as a busy host would */
+	__u64 wake_late;
+	/* if set: latency of the n-th request submitted, as the model gave it */
+	__u64 *done_log;
+	long nsub;
 };
 
 static __u64 env_now(void *c)
@@ -157,6 +163,8 @@ static void env_done(void *c, int tag, __u64 when)
 	      tag, (long long)(r->sub - when));
 	r->has_done = 1;
 	r->done_at = when;
+	if (s->done_log)
+		s->done_log[r->id] = when - r->sub;
 	r->set_at = s->now;
 	if (r->op == MODEL_FLUSH)
 		flush_durable(s, when);
@@ -222,6 +230,12 @@ static void check_state(struct sim *s)
 		      (unsigned long long)m->buf_bytes,
 		      (unsigned long long)sum);
 		CHECK(m->buf_bytes <= m->buf_cap, "buffer over capacity");
+		/* every group due has been started */
+		for (q = 0; q < (__u64)m->nack; q++)
+			CHECK(m->ack[q].ack > m->now || m->ack_end > m->now,
+			      "a buffered write waits for a group that is due");
+		CHECK(m->nack <= (int)m->depth, "%d writes wait for a group",
+		      m->nack);
 		CHECK(m->pool >= 0 && m->pool <= m->pool_cap * (1 + 1e-9),
 		      "gc pool %.0f outside 0..%.0f", m->pool, m->pool_cap);
 		for (q = 0; q < m->p.dies; q++)
@@ -269,7 +283,8 @@ static int sim_submit(struct sim *s, int op, __u64 lba, __u64 nr,
 	if (tag == (int)s->depth)
 		return -1;
 	s->rq[tag] = (struct rq) { .busy = 1, .op = op, .lba = lba, .nr = nr,
-				   .sub = s->now, .owner = owner };
+				   .sub = s->now, .owner = owner,
+				   .id = s->nsub++ };
 	s->inflight++;
 	if (s->h)
 		hdd_model_submit(s->h, tag, op, lba, nr);
@@ -299,8 +314,8 @@ static int sim_step(struct sim *s, __u64 limit)
 			which = tag;
 		}
 	}
-	if (s->wake_at < t) {
-		t = s->wake_at;
+	if (s->wake_at != NONE && s->wake_at + s->wake_late < t) {
+		t = s->wake_at + s->wake_late;
 		which = -1;
 	}
 	if (t == NONE || t > limit)
@@ -1924,6 +1939,417 @@ static void ssd_read_levels(void)
 	sim_free(&s);
 }
 
+/* latency of each of n 4K writes submitted at once, in order */
+static void ssd_burst(struct sim *s, int n, int op, __u64 *lat)
+{
+	int i, tags[MAXQ];
+
+	for (i = 0; i < n; i++)
+		tags[i] = sim_submit(s, op, (1000 + 500 * i) * 8, 8, NULL);
+	sim_drain(s, s->now + SEC);
+	for (i = 0; i < n; i++)
+		lat[i] = s->rq[tags[i]].done_at - s->rq[tags[i]].sub;
+}
+
+static __u64 rq_lat(const struct sim *s, int tag)
+{
+	return s->rq[tag].done_at - s->rq[tag].sub;
+}
+
+static void ssd_write_groups(void)
+{
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	__u64 lat[MAXQ], base[MAXQ], t0, link, a1, e1, F = 8000, S = 4000;
+	__u64 iface, rest, link256;
+	double iops, want;
+	struct sim s;
+	int i, tag, t2, t3;
+
+	p.cmd_us = 0.5;
+	p.waf = 1;
+	iface = p.iface_us * 1e3;
+	rest = iface - F - S;
+
+	cur_test = "ssd: group commit: a lone write costs what it does without";
+	ssd_up(&s, &p, 128);
+	ssd_burst(&s, 1, MODEL_WRITE, base);
+	sim_free(&s);
+	link = base[0] - iface;
+	p.wgroup_us = F / 1e3;
+	p.wcmd_us = S / 1e3;
+	ssd_up(&s, &p, 128);
+	ssd_burst(&s, 1, MODEL_WRITE, lat);
+	CHECK(lat[0] == base[0], "write %.3f us, without groups %.3f us",
+	      lat[0] / 1e3, base[0] / 1e3);
+	CHECK(s.s->n_groups == 1, "%llu groups for one write",
+	      (unsigned long long)s.s->n_groups);
+
+	/*
+	 * Eight at once reach the buffer one link time apart, all within
+	 * the first one's group: it is alone, the seven are the next group.
+	 */
+	cur_test = "ssd: group commit: a burst is the first write, then the rest together";
+	sim_run_until(&s, s.now + MS);
+	ssd_burst(&s, 8, MODEL_WRITE, lat);
+	CHECK(lat[0] == link + iface, "first of the burst %.3f us, expected "
+	      "%.3f us", lat[0] / 1e3, (link + iface) / 1e3);
+	for (i = 1; i < 8; i++)
+		CHECK(lat[i] == link + (F + S) + (F + 7 * S) + rest,
+		      "write %d of the burst %.3f us, expected the first's "
+		      "group, then wgroup + 7 wcmd: %.3f us", i, lat[i] / 1e3,
+		      (link + 2 * F + 8 * S + rest) / 1e3);
+	CHECK(s.s->n_groups == 3, "%llu groups, expected 3 (1, 1, 7 writes)",
+	      (unsigned long long)s.s->n_groups);
+
+	/* the group that starts as the first ends takes what has arrived by then */
+	for (i = 0; i < 2; i++) {
+		cur_test = i ? "ssd: group commit: a write arriving 1 ns after a group started is the next group" :
+			"ssd: group commit: a write arriving as a group starts is in it";
+		sim_run_until(&s, s.now + MS);
+		t0 = s.now;
+		sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+		a1 = t0 + link;
+		e1 = a1 + F + S;
+		sim_run_until(&s, t0 + 3000);
+		t2 = sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+		sim_run_until(&s, e1 - link + i);
+		t3 = sim_submit(&s, MODEL_WRITE, 24000, 8, NULL);
+		sim_drain(&s, s.now + SEC);
+		if (!i) {
+			CHECK(s.rq[t2].done_at == e1 + F + 2 * S + rest &&
+			      s.rq[t3].done_at == s.rq[t2].done_at,
+			      "second and third done %.3f and %.3f us after the "
+			      "first group, expected %.3f", (s.rq[t2].done_at - e1) / 1e3,
+			      (s.rq[t3].done_at - e1) / 1e3, (F + 2 * S + rest) / 1e3);
+		} else {
+			CHECK(s.rq[t2].done_at == e1 + F + S + rest &&
+			      s.rq[t3].done_at == e1 + 2 * (F + S) + rest,
+			      "second and third done %.3f and %.3f us after the "
+			      "first group, expected %.3f and %.3f",
+			      (s.rq[t2].done_at - e1) / 1e3, (s.rq[t3].done_at - e1) / 1e3,
+			      (F + S + rest) / 1e3, (2 * (F + S) + rest) / 1e3);
+		}
+	}
+
+	/*
+	 * A read holds a link slot 65 us ahead. A 1 MiB write does not fit
+	 * before it and gets its data in last, long after the two small
+	 * writes' groups; a small write sent meanwhile fits before the read
+	 * and overtakes it. A group cannot start before the data of its
+	 * first write: both cost what they do without groups.
+	 */
+	cur_test = "ssd: group commit: a group starts when its first write's data is in, whatever the order";
+	sim_free(&s);
+	for (i = 0; i < 2; i++) {
+		int big, late;
+
+		p.wgroup_us = i ? F / 1e3 : 0;
+		p.wcmd_us = i ? S / 1e3 : 0;
+		ssd_up(&s, &p, 128);
+		t0 = s.now;
+		sim_submit(&s, MODEL_READ, 3000 * 8, 8, NULL);
+		tag = sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+		sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+		big = sim_submit(&s, MODEL_WRITE, 1 << 20, 2048, NULL);
+		sim_run_until(&s, t0 + 40000);
+		lat[0] = s.rq[tag].done_at - t0;	/* done: its tag is reused */
+		late = sim_submit(&s, MODEL_WRITE, 24000, 8, NULL);
+		if (i)
+			CHECK(s.s->nack == 2 && s.s->ack[0].ack > s.s->ack[1].ack,
+			      "the test wants the 1 MiB write queued ahead of "
+			      "the late one with its data still to come");
+		sim_drain(&s, s.now + SEC);
+		lat[1] = s.rq[big].done_at - t0;
+		lat[2] = s.rq[late].done_at - t0;
+		if (i)
+			CHECK(lat[0] == base[0] && lat[1] == base[1] &&
+			      lat[2] == base[2], "first, 1 MiB and late write "
+			      "done at %.3f, %.3f, %.3f us, without groups %.3f, "
+			      "%.3f, %.3f", lat[0] / 1e3, lat[1] / 1e3,
+			      lat[2] / 1e3, base[0] / 1e3, base[1] / 1e3,
+			      base[2] / 1e3);
+		base[0] = lat[0];
+		base[1] = lat[1];
+		base[2] = lat[2];
+		if (!i)
+			sim_free(&s);
+	}
+
+	cur_test = "ssd: group commit: reads are not grouped and do not wait";
+	sim_run_until(&s, s.now + MS);
+	t0 = s.now;
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	tag = sim_submit(&s, MODEL_READ, 3000 * 8, 8, NULL);
+	sim_drain(&s, s.now + SEC);
+	lat[0] = rq_lat(&s, tag);
+	sim_free(&s);
+	p.wgroup_us = p.wcmd_us = 0;
+	ssd_up(&s, &p, 128);
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	tag = sim_submit(&s, MODEL_READ, 3000 * 8, 8, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(lat[0] == rq_lat(&s, tag), "read next to two writes %.3f us, "
+	      "without groups %.3f us", lat[0] / 1e3, rq_lat(&s, tag) / 1e3);
+	sim_free(&s);
+
+	/*
+	 * 1 MiB of buffer, 256K writes, one die: four fit, two wait for
+	 * room, which comes after 6.6 and 13.2 ms. Groups of 10 ms + 1 ms
+	 * a write: the first write alone until 11 ms; the next three and
+	 * the first waiter (in the buffer by then) until 11 + 14 ms; the
+	 * second waiter, admitted during that group, alone after it.
+	 */
+	cur_test = "ssd: group commit: a write that waited for buffer room is in the next group to start after it got in";
+	p.buf_mb = 1;
+	p.dies = 1;
+	p.iface_us = 20000;
+	p.wgroup_us = 10000;
+	p.wcmd_us = 1000;
+	ssd_up(&s, &p, 128);
+	for (i = 0; i < 6; i++)
+		sim_submit(&s, MODEL_WRITE, 100000 + 4096 * i, 512, NULL);
+	CHECK(s.s->nwait == 2, "%d writes wait for room, expected 2", s.s->nwait);
+	sim_drain(&s, s.now + SEC);
+	link256 = (__u64)(p.cmd_us * 1e3) + (__u64)xfer_ns_of(p.iface_mbps, 512 << 9);
+	CHECK(rq_lat(&s, 0) == link256 + 20 * MS, "first write %.3f us",
+	      rq_lat(&s, 0) / 1e3);
+	for (i = 1; i < 5; i++)
+		CHECK(rq_lat(&s, i) == link256 + (11 + 14 + 9) * MS,
+		      "write %d: %.3f ms, expected link + 34 ms", i,
+		      rq_lat(&s, i) / 1e6);
+	CHECK(rq_lat(&s, 5) == link256 + (11 + 14 + 11 + 9) * MS,
+	      "last write: %.3f ms, expected link + 45 ms", rq_lat(&s, 5) / 1e6);
+	sim_free(&s);
+
+	/*
+	 * The buffer full of four 256K writes, four 4K writes waiting: the
+	 * first page programmed makes room for all four at the same moment,
+	 * with the controller idle. They are one group, not one write and
+	 * then three: each takes 3 wcmd_us more than without groups.
+	 */
+	cur_test = "ssd: group commit: writes that get buffer room together are one group";
+	for (i = 0; i < 2; i++) {
+		p.iface_us = 14;
+		p.wgroup_us = i ? 8 : 0;
+		p.wcmd_us = i ? 4 : 0;
+		ssd_up(&s, &p, 128);
+		for (tag = 0; tag < 4; tag++)
+			sim_submit(&s, MODEL_WRITE, 100000 + 4096 * tag, 512, NULL);
+		for (tag = 4; tag < 8; tag++)
+			sim_submit(&s, MODEL_WRITE, 8000 * tag, 8, NULL);
+		CHECK(s.s->nwait == 4, "%d writes wait for room, expected 4",
+		      s.s->nwait);
+		sim_drain(&s, s.now + SEC);
+		for (tag = 4; tag < 8; tag++) {
+			if (!i)
+				base[tag] = rq_lat(&s, tag);
+			else
+				CHECK(rq_lat(&s, tag) == base[tag] + 3 * 4000 &&
+				      base[tag] - base[4] < 5000,
+				      "waiter %d: %.3f us, without groups %.3f, "
+				      "expected 3 wcmd_us more", tag - 4,
+				      rq_lat(&s, tag) / 1e3, base[tag] / 1e3);
+		}
+		sim_free(&s);
+	}
+	p.buf_mb = 64;
+	p.dies = 64;
+
+	cur_test = "ssd: group commit: every tag can wait for a group at once";
+	p.wgroup_us = 8;
+	p.wcmd_us = 4;
+	ssd_up(&s, &p, 32);
+	for (i = 0; i < 32; i++)
+		sim_submit(&s, MODEL_WRITE, 8000 * i, 8, NULL);
+	CHECK(s.s->nack == 31, "%d writes wait for a group, expected 31",
+	      s.s->nack);
+	sim_drain(&s, s.now + SEC);
+	sim_free(&s);
+
+	/* a queued flush with PLP does not wait for writes in flight, as before */
+	cur_test = "ssd: group commit: an NVMe flush with PLP still costs flush_us";
+	p.vwc = 1;
+	p.flush_us = 5;
+	ssd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	t2 = sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	tag = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	CHECK(rq_lat(&s, tag) == 5000, "flush %.3f us", rq_lat(&s, tag) / 1e3);
+	sim_drain(&s, s.now + SEC);
+	lat[0] = rq_lat(&s, t2);
+	sim_free(&s);
+	p.vwc = 0;
+	p.flush_us = 0;
+
+	cur_test = "ssd: group commit: floor_us comes off a grouped write too";
+	p.floor_us = 5;
+	ssd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	t2 = sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(rq_lat(&s, t2) == lat[0] - 5000, "second write %.3f us with "
+	      "floor 5, %.3f without", rq_lat(&s, t2) / 1e3, lat[0] / 1e3);
+	sim_free(&s);
+	p.floor_us = 0;
+
+	/*
+	 * SATA: the flush is not queued: it waits for the write still
+	 * waiting for its group; the writes behind it are released when it
+	 * is done and go through the groups from then.
+	 */
+	cur_test = "ssd: group commit: a SATA flush waits for a write not yet in a group";
+	p = *ssd_profile("sata-plp");
+	F = 10000;
+	S = 5000;
+	p.wgroup_us = F / 1e3;
+	p.wcmd_us = S / 1e3;
+	iface = p.iface_us * 1e3;
+	rest = iface - F - S;
+	ssd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	link = (__u64)(p.cmd_us * 1e3) + (__u64)xfer_ns_of(p.iface_mbps, 4096);
+	t2 = sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	tag = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	for (i = 0; i < 3; i++)
+		sim_submit(&s, MODEL_WRITE, 24000 + 8000 * i, 8, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(rq_lat(&s, t2) == link + (F + S) + (F + S) + rest,
+	      "second write %.3f us, expected %.3f", rq_lat(&s, t2) / 1e3,
+	      (link + 2 * (F + S) + rest) / 1e3);
+	CHECK(s.rq[tag].done_at == s.rq[t2].done_at + (__u64)(p.flush_us * 1e3),
+	      "flush done %.3f us after the second write, expected flush_us "
+	      "%.3f", ((double)s.rq[tag].done_at - s.rq[t2].done_at) / 1e3,
+	      p.flush_us);
+	cur_test = "ssd: group commit: writes released by a SATA flush form groups from then";
+	t0 = s.rq[tag].done_at;
+	CHECK(s.rq[tag + 1].done_at == t0 + link + iface &&
+	      s.rq[tag + 2].done_at == t0 + link + 2 * (F + S) + rest &&
+	      s.rq[tag + 3].done_at == t0 + link + 3 * (F + S) + rest,
+	      "released writes done %.3f, %.3f, %.3f us after the flush, "
+	      "expected %.3f, %.3f, %.3f",
+	      (s.rq[tag + 1].done_at - t0) / 1e3, (s.rq[tag + 2].done_at - t0) / 1e3,
+	      (s.rq[tag + 3].done_at - t0) / 1e3, (link + iface) / 1e3,
+	      (link + 2 * (F + S) + rest) / 1e3, (link + 3 * (F + S) + rest) / 1e3);
+	sim_free(&s);
+
+	cur_test = "ssd: group commit: a SATA flush without PLP waits for the grouped write and its page";
+	p = *ssd_profile("sata-consumer");
+	p.wgroup_us = 6;
+	p.wcmd_us = 2;
+	ssd_up(&s, &p, 32);
+	sim_submit(&s, MODEL_WRITE, 8000, 8, NULL);
+	t2 = sim_submit(&s, MODEL_WRITE, 16000, 8, NULL);
+	tag = sim_submit(&s, MODEL_FLUSH, 0, 0, NULL);
+	sim_drain(&s, s.now + SEC);
+	CHECK(s.rq[tag].done_at >= s.rq[t2].done_at + (__u64)(p.flush_us * 1e3) &&
+	      rq_lat(&s, tag) >= ssd_unit_ns(&p), "flush done %.3f us after "
+	      "the second write, %.3f us in all", ((double)s.rq[tag].done_at -
+	      s.rq[t2].done_at) / 1e3, rq_lat(&s, tag) / 1e3);
+	sim_free(&s);
+	p = *ssd_profile("sata-plp");
+
+	cur_test = "ssd: group commit: a group of one must fit in iface_us";
+	p.wgroup_us = p.iface_us;
+	p.wcmd_us = 0.001;
+	CHECK(ssd_params_check(&p, 1 << 20, 32), "wgroup_us + wcmd_us 1 ns "
+	      "above iface_us accepted");
+	p.wcmd_us = 0;
+	CHECK(!ssd_params_check(&p, 1 << 20, 32), "wgroup_us = iface_us refused");
+
+	/*
+	 * A write completes with its group and comes back during the next,
+	 * so it waits out that one and its own: two groups that hold all n
+	 * writers between them.
+	 */
+	cur_test = "ssd: group commit: n writers take 2 wgroup_us + n wcmd_us each";
+	p = *ssd_profile("nvme-plp");
+	p.waf = 1;
+	p.wgroup_us = 8;
+	p.wcmd_us = 4;
+	for (i = 2; i <= 32; i *= 4) {
+		iops = ssd_run(&p, 128, MODEL_WRITE, RAND, 8, i, 0, 1, NULL);
+		want = i * 1e9 / (2 * 8000 + i * 4000);
+		CHECK(fabs(iops - want) / want < 0.01, "%d writers %.0f IOPS, "
+		      "expected %.0f", i, iops, want);
+	}
+	iops = ssd_run(&p, 128, MODEL_WRITE, RAND, 8, 1, 0, 1, NULL);
+	want = 1e9 / (p.iface_us * 1e3 + xfer_ns_of(p.iface_mbps, 4096));
+	CHECK(fabs(iops - want) / want < 0.01, "one writer %.0f IOPS, expected "
+	      "%.0f", iops, want);
+}
+
+/*
+ * The model is told the time only when it is called, and a host calls
+ * late. The same requests at the same times must complete at the same
+ * times whether wake-ups are delivered on time or late: a small buffer,
+ * so that writes wait for room, write groups on and off.
+ */
+static void ssd_late_wakes(void)
+{
+	enum { N = 20000 };
+	static __u64 when[4][N];
+	/* the last one is several page programs long */
+	static const __u64 late[4] = { 0, 30000, 150000, 3000000 };
+	struct ssd_params p = *ssd_profile("nvme-plp");
+	__u64 seed = rng_state;
+	int g, l, i, diff;
+
+	p.dies = 16;
+	p.waf = 1;
+	p.buf_mb = 1;
+	p.vwc = 1;
+	for (g = 0; g < 2; g++) {
+		cur_test = g ? "ssd: late wake-ups change no completion time, write groups on" :
+			"ssd: late wake-ups change no completion time";
+		/* groups as long as a page program: pages end while one runs */
+		p.iface_us = g ? 400 : 14;
+		p.wgroup_us = g ? 300 : 0;
+		p.wcmd_us = g ? 20 : 0;
+		for (l = 0; l < 4; l++) {
+			struct sim s;
+			__u64 t = 0;
+
+			rng_state = seed;
+			ssd_up(&s, &p, 128);
+			s.wake_late = late[l];
+			s.done_log = when[l];
+			for (i = 0; i < N; i++) {
+				__u64 r = rnd_below(100), nr = 64 << rnd_below(4);
+
+				/* bursts a few us apart, then a pause */
+				t += rnd_below(5) ? rnd_below(20000) : rnd_below(2 * MS);
+				sim_run_until(&s, t);
+				if (sim_submit(&s, r < 70 ? MODEL_WRITE :
+					       r < 97 ? MODEL_READ : MODEL_FLUSH,
+					       r < 97 ? rnd_below(SSD_SECTORS / 64) * 64 : 0,
+					       r < 97 ? nr : 0, NULL) < 0) {
+					CHECK(0, "no free tag: the schedule is too dense");
+					break;
+				}
+			}
+			sim_drain(&s, s.now + SEC);
+			if (!l)
+				CHECK(s.s->n_buf_full > N / 100 && (!g ||
+				      s.s->n_write - s.s->n_groups > N / 50),
+				      "the schedule is too light: %llu waits for "
+				      "room, %llu groups for %llu writes",
+				      (unsigned long long)s.s->n_buf_full,
+				      (unsigned long long)s.s->n_groups,
+				      (unsigned long long)s.s->n_write);
+			sim_free(&s);
+			if (!l)
+				continue;
+			for (diff = 0, i = 0; i < N; i++)
+				diff += when[l][i] != when[0][i];
+			CHECK(!diff, "%d of %d completion times differ with "
+			      "wake-ups %llu us late", diff, N,
+			      (unsigned long long)late[l] / 1000);
+		}
+	}
+}
+
 /* latency of a read of [lba, lba + nr) once earlier programs are done */
 static double ssd_quiet_read(struct sim *s, __u64 lba, __u64 nr)
 {
@@ -2183,6 +2609,10 @@ static void ssd_random(int runs)
 		p.gc_mbps = rnd_below(2) ? 0 : 50;
 		p.gc_idle_s = rnd_below(2) ? 0 : 0.002;
 		p.cmd_us = p.nvme ? (rnd_below(2) ? 0 : 0.56) : 3;
+		if (rnd_below(2)) {
+			p.wgroup_us = 10;
+			p.wcmd_us = 4.8;
+		}
 		depth = p.nvme ? 64 : 32;
 		ssd_up(&s, &p, depth);
 		s.deep_check = 1;
@@ -2220,6 +2650,8 @@ int main(int argc, char **argv)
 	ssd_read_levels();
 	ssd_history();
 	ssd_gc_pool();
+	ssd_write_groups();
+	ssd_late_wakes();
 	hdd_random(runs);
 	ssd_random(runs);
 

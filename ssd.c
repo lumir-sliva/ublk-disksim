@@ -73,7 +73,8 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	}
 	if (ssd_params_check(p, dev->dev_info.max_io_buf_bytes, depth)) {
 		ublk_err("ssd: bad model parameters (buf_mb must hold the "
-			 "largest request plus a page; see `kublk help`)\n");
+			 "largest request plus a page, wgroup_us + wcmd_us "
+			 "must fit in iface_us; see `kublk help`)\n");
 		return -EINVAL;
 	}
 
@@ -111,12 +112,14 @@ static int ssd_init_tgt(const struct dev_ctx *ctx, struct ublk_dev *dev)
 		 "page %u KiB, read %.1f us + %.1f us a level, program %.1f us "
 		 "x waf %.2f, suspend %.1f us, channel %.0f MB/s, buffer %u MiB, "
 		 "plp %u vwc %u flush %.1f us, floor %.1f us, history %s, "
-		 "gc pool %.0f MiB at %.0f MB/s after %.0f s idle\n",
+		 "gc pool %.0f MiB at %.0f MB/s after %.0f s idle, "
+		 "write groups %.1f us + %.1f us a write\n",
 		 p->nvme ? "nvme" : "sata", p->iface_mbps, p->cmd_us,
 		 p->iface_us, p->dies, p->page_kb, p->tr_us, p->tr_step_us,
 		 p->tprog_us, p->waf, p->susp_us, p->ch_mbps, p->buf_mb, p->plp,
 		 p->vwc, p->flush_us, p->floor_us, p->history ? "rnd" : "seq",
-		 p->gc_pool_mb, p->gc_mbps, p->gc_idle_s);
+		 p->gc_pool_mb, p->gc_mbps, p->gc_idle_s, p->wgroup_us,
+		 p->wcmd_us);
 	return 0;
 }
 
@@ -208,6 +211,10 @@ static void ssd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->gc_mbps = strtod(v, NULL);
 		else if (!strcmp(k, "--gc_idle_s"))
 			p->gc_idle_s = strtod(v, NULL);
+		else if (!strcmp(k, "--wgroup_us"))
+			p->wgroup_us = strtod(v, NULL);
+		else if (!strcmp(k, "--wcmd_us"))
+			p->wcmd_us = strtod(v, NULL);
 		else if (!strcmp(k, "--stats"))
 			snprintf(p->stats, sizeof(p->stats), "%s", v);
 		/* other targets' options pass through here too: ignore */
@@ -225,7 +232,8 @@ static void ssd_usage(const struct ublk_tgt_ops *ops)
 	       " [--plp 0|1] [--vwc 0|1] [--flush_us X]\n"
 	       "\t     [--floor_us X] [--history seq|rnd]"
 	       " [--gc_pool_mb X] [--gc_mbps X]\n"
-	       "\t     [--gc_idle_s X] [--stats FILE]\n"
+	       "\t     [--gc_idle_s X] [--wgroup_us X] [--wcmd_us X]\n"
+	       "\t     [--stats FILE]\n"
 	       "\t     BACKING_DEV (use -q 1; -d 32 for sata, -d 128 for nvme)\n");
 }
 

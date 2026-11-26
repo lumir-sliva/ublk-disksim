@@ -47,6 +47,16 @@
  *    programmed for gc_idle_s it prepares erased space at gc_mbps, up
  *    to gc_pool_mb, and pages that need copies use that first at one
  *    unit per page (the refill takes no die time: a simplification);
+ *  - write group commit (wgroup_us, wcmd_us): the controller
+ *    acknowledges writes in groups. When it is idle it takes the
+ *    writes whose data is in the buffer, works wgroup_us plus wcmd_us
+ *    for each, and completes them together; writes arriving meanwhile
+ *    are the next group (a write that finds it idle is a group of one).
+ *    The time of a group of one is part of iface_us, so a lone write
+ *    costs what it does without. Two writes in flight already wait for
+ *    each other's group; n writers in a closed loop see two groups
+ *    holding all of them: 2 wgroup_us + n wcmd_us, and their rate
+ *    levels off at 1 / wcmd_us;
  *  - FLUSH: nothing is advertised with vwc = 0, so the kernel sends none.
  *    With plp = 1 the buffer is durable and a flush costs flush_us after
  *    it is issued; with plp = 0 the partly filled page is closed and the
@@ -334,6 +344,63 @@ static __u64 mark_history(struct ssd_model *m, __u64 lba, __u64 nr,
 	return gc;
 }
 
+/*
+ * Group commit: a write whose data is in the buffer at `a`. If that is
+ * still ahead (the data is on the link) and the controller will be idle
+ * then, it is a group of one, decided now: no wake-up per write. Else it
+ * waits for ack_groups(): writes that get buffer room at the same moment
+ * must end up in one group, whenever that moment is noticed.
+ */
+static void ack_write(struct ssd_model *m, const struct ssd_req *r, __u64 a)
+{
+	if (a > m->now && !m->nack && m->ack_end <= a) {
+		m->ack_end = a + m->wgroup_ns + m->wcmd_ns;
+		m->n_groups++;
+		done(m, r, m->ack_end + m->wrest_ns);
+		return;
+	}
+	m->ack[m->nack] = *r;
+	m->ack[m->nack++].ack = a;
+}
+
+/*
+ * Start the groups due up to now: each as the one before it ends, or
+ * when the first waiting write's data arrives if that is later, with
+ * every write that has arrived by then.
+ */
+static int ack_groups(struct ssd_model *m)
+{
+	int progress = 0;
+
+	m->next_ack = ~0ULL;
+	while (m->nack) {
+		__u64 start = ~0ULL, end;
+		int i, n = 0, k = 0;
+
+		for (i = 0; i < m->nack; i++)
+			start = min_u64(start, m->ack[i].ack);
+		start = max_u64(start, m->ack_end);
+		if (start > m->now) {
+			m->next_ack = start;
+			break;
+		}
+		for (i = 0; i < m->nack; i++)
+			k += m->ack[i].ack <= start;
+		end = start + m->wgroup_ns + k * m->wcmd_ns;
+		for (i = 0; i < m->nack; i++) {
+			if (m->ack[i].ack <= start)
+				done(m, &m->ack[i], end + m->wrest_ns);
+			else
+				m->ack[n++] = m->ack[i];
+		}
+		m->nack = n;
+		m->ack_end = end;
+		m->n_groups++;
+		progress = 1;
+	}
+	return progress;
+}
+
 /* write data enters the buffer at `a`; the write completes */
 static void admit(struct ssd_model *m, const struct ssd_req *r, __u64 a)
 {
@@ -351,7 +418,10 @@ static void admit(struct ssd_model *m, const struct ssd_req *r, __u64 a)
 		if (m->open_bytes == m->page_bytes)
 			close_open(m, m->open_last);
 	}
-	done(m, r, a + m->iface_ns);
+	if (m->wgroup_ns || m->wcmd_ns)
+		ack_write(m, r, a);
+	else
+		done(m, r, a + m->iface_ns);
 }
 
 static void start(struct ssd_model *m, struct ssd_req r);
@@ -449,12 +519,15 @@ static int free_pages(struct ssd_model *m)
 	return progress;
 }
 
-/* the pending SATA flush, once every earlier command has been taken */
+/*
+ * The pending SATA flush, once every earlier command has been taken (a
+ * write waiting for its group has no completion time yet)
+ */
 static int sata_flush_check(struct ssd_model *m)
 {
 	__u64 drain;
 
-	if (m->sflush_tag < 0 || m->nwait)
+	if (m->sflush_tag < 0 || m->nwait || m->nack)
 		return 0;
 	drain = max_u64(m->sflush.t, m->last_done);
 	if (!m->sflush_closed) {
@@ -488,12 +561,25 @@ static int sata_flush_check(struct ssd_model *m)
 static void pump(struct ssd_model *m)
 {
 	__u64 next;
+	int progress;
 
 	m->now = m->env.now(m->env.ctx);
 	link_prune(m);
-	while (run_units(m) | free_pages(m) | sata_flush_check(m))
-		;
-	next = m->next_unit;
+	/*
+	 * Programs and buffer room first, up to now and until nothing moves:
+	 * a page's end can admit a write, which closes pages, which end and
+	 * admit more. Only then the groups, which take what was admitted by
+	 * their start, whenever this runs.
+	 */
+	do {
+		do {
+			progress = run_units(m);
+			progress |= free_pages(m);
+		} while (progress);
+		progress = ack_groups(m);
+		progress |= sata_flush_check(m);
+	} while (progress);
+	next = min_u64(m->next_unit, m->next_ack);
 	if (m->nwait && m->nheap)
 		next = min_u64(next, page(m, m->heap[0])->end);
 	if (next != ~0ULL)
@@ -714,13 +800,16 @@ static const struct {
 	 * the datasheet's), 64 KiB programs of 2.7 ms (the datasheet's
 	 * sequential write rate), reads suspend programs. cmd_us caps 4K
 	 * reads at 1 / (cmd + 4K link) = 519K, the datasheet's 520K at
-	 * QD512 (the drive: 534K at QD256).
+	 * QD512 (the drive: 534K at QD256). Group commit measured on the
+	 * drive with erased space to spare: 4K writes at QD 1 / 2 / 4 / 8 /
+	 * 16 take 24 / 43 / 51 / 71 / 116 us, 633 us with 128 in flight.
 	 */
 	{ "micron-7300", {
 		.nvme = 1, .iface_mbps = 3000, .cmd_us = 0.56, .iface_us = 23.6,
 		.dies = 64, .page_kb = 64, .tr_us = 25, .tr_step_us = 26,
 		.ch_mbps = 800, .tprog_us = 2624, .waf = 5.0, .susp_us = 20,
 		.buf_mb = 64, .plp = 1, .vwc = 0, .flush_us = 0,
+		.wgroup_us = 16.3, .wcmd_us = 4.8,
 	} },
 };
 
@@ -744,7 +833,11 @@ int ssd_params_check(const struct ssd_params *p, __u64 max_io_bytes,
 	    p->waf < 1 || p->cmd_us < 0 || p->iface_us < 0 ||
 	    p->flush_us < 0 || p->floor_us < 0 || p->susp_us < 0 ||
 	    p->tr_step_us < 0 || p->history > 1 || p->gc_pool_mb < 0 ||
-	    p->gc_mbps < 0 || p->gc_idle_s < 0 ||
+	    p->gc_mbps < 0 || p->gc_idle_s < 0 || p->wgroup_us < 0 ||
+	    p->wcmd_us < 0 ||
+	    /* in ns, as the model adds them: a group of one within iface_us */
+	    (__u64)(p->wgroup_us * 1e3) + (__u64)(p->wcmd_us * 1e3) >
+	    (__u64)(p->iface_us * 1e3) ||
 	    ((__u64)p->buf_mb << 20) < max_io_bytes +
 	    ((__u64)p->page_kb << 10) ||
 	    (!p->nvme && depth > 32))
@@ -778,6 +871,9 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
 	m->iface_ns = (__u64)(p->iface_us * 1e3);
 	m->flush_ns = (__u64)(p->flush_us * 1e3);
 	m->susp_ns = (__u64)(p->susp_us * 1e3);
+	m->wgroup_ns = (__u64)(p->wgroup_us * 1e3);
+	m->wcmd_ns = (__u64)(p->wcmd_us * 1e3);
+	m->wrest_ns = m->iface_ns - m->wgroup_ns - m->wcmd_ns;
 	m->floor_ns = (__u64)(p->floor_us * 1e3);
 	m->page_xfer_ns = xfer_ns(p->ch_mbps, m->page_bytes);
 	m->unit_ns = m->page_xfer_ns + (__u64)(p->tprog_us * 1e3);
@@ -791,12 +887,13 @@ struct ssd_model *ssd_model_new(const struct ssd_params *p, __u64 sectors,
 	m->pg = calloc(m->cap_pg, sizeof(*m->pg));
 	m->heap = calloc(m->cap_pg, sizeof(*m->heap));
 	m->wait = calloc(depth, sizeof(*m->wait));
+	m->ack = calloc(depth, sizeof(*m->ack));
 	m->held = calloc(depth, sizeof(*m->held));
 	m->spare = calloc(depth, sizeof(*m->spare));
 	m->nflush = calloc(depth, sizeof(*m->nflush));
 	assert(m->die_free && m->prog_end && m->read_end && m->prog_from &&
-	       m->link && m->pg && m->heap && m->wait && m->held && m->spare &&
-	       m->nflush);
+	       m->link && m->pg && m->heap && m->wait && m->ack && m->held &&
+	       m->spare && m->nflush);
 	m->sflush_tag = -1;
 	m->pool_cap = p->gc_mbps > 0 ? p->gc_pool_mb * 1048576.0 : 0;
 	m->gc_idle_ns = (__u64)(p->gc_idle_s * 1e9);
@@ -815,6 +912,7 @@ void ssd_model_free(struct ssd_model *m)
 	free(m->pg);
 	free(m->heap);
 	free(m->wait);
+	free(m->ack);
 	free(m->held);
 	free(m->spare);
 	free(m->nflush);
@@ -847,7 +945,7 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		"blocked_by_flush %llu\nblocked_ms_sum %.3f\n"
 		"read_die_waits %llu\nread_die_wait_ms_sum %.3f\n"
 		"read_suspends %llu\nfragment_reads %llu\nbuffer_mb %.3f\n"
-		"gc_pool_mb %.3f\ngc_pool_used_mb %.3f\n",
+		"gc_pool_mb %.3f\ngc_pool_used_mb %.3f\nwrite_groups %llu\n",
 		(unsigned long long)m->n_read, (unsigned long long)m->n_write,
 		(unsigned long long)m->n_flush, m->flush_ns_sum / 1e6,
 		m->flush_ns_max / 1e6, m->seq_bytes / 1048576.0,
@@ -857,5 +955,6 @@ int ssd_model_stats(const struct ssd_model *m, char *buf, int len)
 		(unsigned long long)m->n_read_wait, m->read_wait_ns_sum / 1e6,
 		(unsigned long long)m->n_read_susp,
 		(unsigned long long)m->n_frag_reads, m->buf_bytes / 1048576.0,
-		m->pool / 1048576.0, m->pool_used / 1048576.0);
+		m->pool / 1048576.0, m->pool_used / 1048576.0,
+		(unsigned long long)m->n_groups);
 }

@@ -270,6 +270,17 @@ What it models (see the header of `ssd_model.c`):
   garbage collection use it first at one unit per page (off in every
   profile; fitted to the real Micron: `--gc_pool_mb 41000 --gc_mbps 400
   --gc_idle_s 58`);
+- write group commit (`--wgroup_us`, `--wcmd_us`; `micron-7300` only):
+  the controller acknowledges writes in groups. When idle it takes the
+  writes whose data is in the buffer, works `wgroup_us` plus `wcmd_us`
+  per write, and completes them together; writes arriving meanwhile
+  are the next group. A lone write costs what it does without (a group
+  of one is part of `iface_us`), a second write in flight already waits
+  for the other's group, and n writers in a closed loop each take 2
+  `wgroup_us` + n `wcmd_us`: on the real Micron 4K writes take 24 / 43
+  / 51 / 71 / 116 µs at QD 1 / 2 / 4 / 8 / 16 (QD2 is barely faster
+  than QD1) and level off near 204K IOPS; the model 25.5 / 42 / 52 /
+  71 / 109 µs, its limit 1 / `wcmd_us` = 208K;
 - FLUSH: with power-loss protection (`--plp 1`) the buffer is durable and
   a flush costs `flush_us`; without it the flush waits until everything
   buffered is programmed, plus `flush_us`. A flush with nothing written
@@ -309,6 +320,8 @@ buffer, mapping table misses, TRIM, multiple NVMe queues.
 | `--gc_pool_mb` | erased space garbage collection prepares while idle (0: none) | 0 | 0 | 0 | 0 |
 | `--gc_mbps` | rate it prepares it at | 0 | 0 | 0 | 0 |
 | `--gc_idle_s` | idle time before it starts | 0 | 0 | 0 | 0 |
+| `--wgroup_us` | write group commit: time per group (0 with `--wcmd_us` 0: none; the two together at most `--iface_us`) | 0 | 0 | 0 | 16.3 |
+| `--wcmd_us` | ... and per write in the group | 0 | 0 | 0 | 4.8 |
 | `--stats` | file rewritten once a second with model counters | | | | |
 
 The profiles follow datasheets: Samsung PM883 960 GB (`sata-plp`),
@@ -321,7 +334,8 @@ EVO no full-drive figure is published, 12K IOPS is an estimate);
 (Ceph community SSD lists: PM883 15.5K/s, PM9A3 70K/s, 870 EVO
 248–311/s). Buffer sizes are assumptions. `micron-7300` also has the
 structure measured on the real drive (TLC page types, 64 KiB programs
-of 2.7 ms, program suspend), set so that its datasheet numbers stay;
+of 2.7 ms, program suspend, write groups), set so that its datasheet
+numbers stay;
 it was checked against the drive on the same host (below and in
 docs/VALIDATION.md).
 
