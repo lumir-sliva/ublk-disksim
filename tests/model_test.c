@@ -1034,6 +1034,77 @@ static void hdd_log_cache(void)
 }
 
 /*
+ * A full cache with writes waiting and reads queued. One read is in
+ * service when the cache fills and three are queued behind it: wb_turns
+ * write-backs before each of those; with wb_queue no more than wb_queue /
+ * (reads still queued), and never less than one.
+ */
+static void hdd_turns(void)
+{
+	static const unsigned turns[] = { 0, 3, 8, 8, 8 },
+		queue[] = { 0, 0, 8, 2, 8 }, ncq[] = { 32, 32, 32, 32, 2 },
+		want[] = { 3, 9, 2 + 4 + 8, 1 + 1 + 2, 2 + 4 + 8 };
+	struct hdd_params p;
+	struct sim s;
+	int i, k, r;
+
+	cur_test = "hdd: wb_turns write-backs per queued request, capped by wb_queue";
+	for (i = 0; i < 5; i++) {
+		int rd[4], left = 4;
+
+		p = hdd_p();
+		p.cache_ext = 16;
+		p.wb_idle_ms = 5000;
+		p.wb_turns = turns[i];
+		p.wb_queue = queue[i];
+		p.ncq = ncq[i];
+		hdd_up(&s, &p, MAXQ);
+		s.now = SEC;
+		for (k = 0; k < 4; k++)
+			rd[k] = sim_submit(&s, MODEL_READ,
+					   rnd_below(HDD_SECTORS / 8) * 8, 8, NULL);
+		/* 16 fill the cache, 40 wait */
+		for (k = 0; k < 56; k++)
+			sim_submit(&s, MODEL_WRITE, HDD_SECTORS / 2 + k * 100000ULL,
+				   8, NULL);
+		while (left && sim_step(&s, s.now + 10 * SEC)) {
+			left = 0;
+			for (k = 0; k < 4; k++)
+				left += s.rq[rd[k]].busy && s.rq[rd[k]].op == MODEL_READ;
+		}
+		CHECK(s.h->n_destage == want[i],
+		      "wb_turns %u wb_queue %u ncq %u: %llu write-backs by the "
+		      "time 4 reads were served, expected %u", turns[i],
+		      queue[i], ncq[i], (unsigned long long)s.h->n_destage,
+		      want[i]);
+		sim_drain(&s, s.now + 60 * SEC);
+		sim_free(&s);
+	}
+
+	/*
+	 * A write-back that started with nothing queued counts as the turn:
+	 * a read arriving during it is served next, also with writes waiting.
+	 */
+	cur_test = "hdd: a write-back under way when a request arrives is its turn";
+	p = hdd_p();
+	p.cache_ext = 4;
+	p.wb_idle_ms = 5000;
+	hdd_up(&s, &p, MAXQ);
+	s.now = SEC;
+	for (k = 0; k < 8; k++)		/* 4 fill the cache, 4 wait */
+		sim_submit(&s, MODEL_WRITE, HDD_SECTORS / 2 + k * 100000ULL, 8, NULL);
+	CHECK(s.h->n_destage == 1 && s.h->destaging, "no write-back under way");
+	r = sim_submit(&s, MODEL_READ, 8, 8, NULL);
+	while (s.rq[r].busy && s.rq[r].op == MODEL_READ &&
+	       sim_step(&s, s.now + 10 * SEC))
+		;
+	CHECK(s.h->n_destage == 1, "%llu write-backs before the read",
+	      (unsigned long long)s.h->n_destage);
+	sim_drain(&s, s.now + 60 * SEC);
+	sim_free(&s);
+}
+
+/*
  * Zones: a sequential read runs at the outer rate at the start of the
  * device, at the inner rate at its end, and at sqrt((Ro^2 + Ri^2) / 2) in
  * the middle; a read that continues the last one never waits for the
@@ -2059,6 +2130,10 @@ static void hdd_random(int runs)
 		if (rnd_below(2))
 			p.capacity_gb = 8000;
 		if (rnd_below(2))
+			p.wb_turns = 3;
+		if (rnd_below(2))
+			p.wb_queue = 8;
+		if (rnd_below(2))
 			p.mbps_inner = p.mbps / (1.5 + rnd_below(3));
 		p.seed = rnd();
 		hdd_up(&s, &p, 32);
@@ -2067,9 +2142,11 @@ static void hdd_random(int runs)
 		op = full + rev_ns(&p) + xfer_ns_of(p.mbps_inner > 0 ?
 						     p.mbps_inner : p.mbps, 1 << 20);
 		wb = full + 2 * rev_ns(&p);	/* a forced write-back: one track */
+		if (p.wb_turns > 1)
+			wb *= p.wb_turns;
 		/*
 		 * Once past the limit a read waits at most for the requests
-		 * past it before it, each after one forced write-back.
+		 * past it before it, each after its forced write-backs.
 		 */
 		if (p.max_wait_ms && !flushes)
 			s.read_bound = p.max_wait_ms * 1e6 + 32 * (op + wb) + op;
@@ -2130,6 +2207,7 @@ int main(int argc, char **argv)
 	hdd_writeback_by_track();
 	hdd_log_cache();
 	hdd_zones();
+	hdd_turns();
 	hdd_wb_window();
 	hdd_writer_next_to_readers();
 	hdd_age_limit();

@@ -161,7 +161,10 @@ One actuator, a platter, a volatile write cache.
   million.
 - **When write-back runs:** whenever the actuator has nothing queued.
   Once the cache is 3/4 full or writes wait for space, also in turn with
-  the queue: one write-back per queued request served.
+  the queue: one write-back per queued request served, or with
+  `wb_turns` up to that many, capped at `wb_queue` / requests queued (a
+  counter of write-backs since the last request served; one that ran
+  with nothing queued counts).
 - **FLUSH:** SATA FLUSH CACHE is non-queued. Queued requests are served,
   the whole dirty set is written back, and everything arriving meanwhile,
   reads included, is held and replayed in arrival order when the flush

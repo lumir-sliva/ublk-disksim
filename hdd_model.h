@@ -23,6 +23,14 @@ struct hdd_params {
 	unsigned	cache_mb;	/* volatile write cache; 0 = write-through */
 	unsigned	ncq;		/* requests considered for reordering */
 	double		max_wait_ms;	/* a request passed over this long goes next */
+	/*
+	 * A cache with no room takes turns with the queue: wb_turns
+	 * write-backs per queued request served (0 = 1), but with wb_queue
+	 * set no more than wb_queue / (requests queued), so that a deep
+	 * queue is not held up for longer than a shallow one.
+	 */
+	unsigned	wb_turns;
+	unsigned	wb_queue;
 	unsigned	wb_window;	/* write-back picks among the N oldest dirty extents, 0 = all */
 	double		stroke;		/* fraction of the full stroke the device spans */
 	/*
@@ -101,7 +109,7 @@ struct hdd_model {
 	__u64 destage_unl;		/* unlogged sectors it is putting in place */
 	int destage_unl_ext;		/* ... the last ones of their extent */
 	__u64 next_seq;			/* arrival counter for hdd_ext.seq */
-	int wb_turn;			/* a write-back ran since the last queued request */
+	int wb_turn;			/* write-backs since the last queued request served */
 	int log;			/* flushes log instead of writing back */
 	int logging;			/* the flush in progress is writing the log */
 	/* neither logged nor in place: extents, and the write-back's share */

@@ -6,6 +6,12 @@ when you report one.
 
 ## Unreleased
 
+- **hdd: `--wb_turns`, `--wb_queue`** (off by default; `nearline-8t`
+  moves where readers meet a writer with the cache full: a QD4 reader
+  next to a random writer gets 31 reads per second instead of 98, the
+  writer 356 instead of 101). A cache with no room gets `wb_turns`
+  write-backs per queued request served, at most `wb_queue` / requests
+  queued, instead of one.
 - **hdd: zones, `--mbps_inner`** (off by default; `nearline-8t` moves:
   sequential rates now 265 MB/s at the start of the device to 128 at
   the end instead of 205 throughout, its other rows within 4%). The

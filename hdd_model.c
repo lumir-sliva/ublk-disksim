@@ -39,6 +39,9 @@
  *    cache is full, then at the rate of write-back; a write that
  *    continues the previous one and finds no room goes straight to the
  *    platters. wsettle_ms is added to every seek that ends in a write;
+ *  - wb_turns, wb_queue: how a cache with no room shares the actuator
+ *    with the queue: wb_turns write-backs per queued request served, at
+ *    most wb_queue / (requests queued);
  *  - capacity_gb: the device stands for a drive of that size, so two
  *    requests share a track (no seek) only as often as on that drive;
  *  - write-through (cache_mb = 0): no volatile cache is advertised, so the
@@ -411,7 +414,8 @@ static void destage(struct hdd_model *m, int i, double ready)
 		x->nr -= nr;
 	}
 	m->n_destage++;
-	m->wb_turn = 1;
+	if (m->wb_turn < (1 << 30))	/* only "at least wb_turns" matters */
+		m->wb_turn++;
 }
 
 /*
@@ -430,6 +434,16 @@ static __u64 wb_since(const struct hdd_model *m)
 	if (m->flush_tag >= 0 && !m->log)
 		return m->flush_start;
 	return m->last_cmd + m->wb_idle_ns;
+}
+
+/* write-backs a full cache gets before the next queued request is served */
+static int wb_turns(const struct hdd_model *m)
+{
+	int n = (int)m->p.wb_turns;
+
+	if (m->p.wb_queue && n > (int)m->p.wb_queue / m->npend)
+		n = (int)m->p.wb_queue / m->npend;
+	return n > 1 ? n : 1;
 }
 
 /*
@@ -482,13 +496,15 @@ static __u64 pump(struct hdd_model *m)
 			 * A cache 3/4 full (or writes waiting for space) forces
 			 * write-back instead of waiting for an idle actuator,
 			 * as a drive does before its cache runs out: one
-			 * write-back per queued request served, counting one
-			 * that started while the queue was empty. (Comparing
+			 * write-back per queued request served, or wb_turns()
+			 * of them, counting those that started while the
+			 * queue was empty. (Comparing
 			 * ready times would starve the queue: the best of
 			 * thousands of dirty extents is nearly always closer
 			 * than the best of a few queued reads.)
 			 */
-			if (m->ndirty && !m->wb_turn && (m->nwait ||
+			if (m->ndirty && m->wb_turn < wb_turns(m) &&
+			    (m->nwait ||
 			    (m->wb_idle_ns ? !cache_room(m, m->last_nr) :
 			     m->dirty_bytes >= m->cache_bytes / 4 * 3))) {
 				double dready = 0;
@@ -706,6 +722,7 @@ static const struct {
 		.ncq = 32, .stroke = 1.0,
 		.max_wait_ms = 500, .wsettle_ms = 0.7,
 		.log_ms = 8, .log_us = 70, .wb_idle_ms = 50,
+		.wb_turns = 12, .wb_queue = 64,
 	} },
 	{ "barracuda-2t", {
 		.rpm = 7200, .seek_min_ms = 1.0, .seek_avg_ms = 13.0,
@@ -736,7 +753,8 @@ int hdd_params_check(const struct hdd_params *p, __u64 max_io_bytes)
 	    !(p->wsettle_ms >= 0 && p->wsettle_ms <= 1e9) ||
 	    !(p->log_ms >= 0 && p->log_ms <= 1e9) ||
 	    !(p->log_us >= 0 && p->log_us <= 1e9) ||
-	    p->cache_ext > (1U << 30) ||
+	    p->cache_ext > (1U << 30) || p->wb_turns > (1U << 20) ||
+	    p->wb_queue > (1U << 20) ||
 	    !(p->capacity_gb >= 0 && p->capacity_gb <= 1e9) ||
 	    !(p->mbps_inner >= 0 && p->mbps_inner <= p->mbps) ||
 	    (p->mbps_inner > 0 && p->stroke > 1) ||

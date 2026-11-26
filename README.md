@@ -44,7 +44,8 @@ What it models (see the header of `hdd_model.c`):
   time first over the whole cache or, with `--wb_window N`, over the N
   writes that arrived first; when the actuator is idle, and once the
   cache is 3/4 full or writes wait for space also in turn with queued
-  requests (one write-back per request served, one that started while
+  requests (one write-back per request served, or `--wb_turns` of
+  them, at most `--wb_queue` / requests queued; one that started while
   the queue was empty counts); a full cache makes writes wait;
 - FLUSH as SATA `FLUSH CACHE`: non-queued. Queued requests finish, the
   whole cache is destaged, and everything that arrives meanwhile, reads
@@ -64,9 +65,10 @@ What it models (see the header of `hdd_model.c`):
   flushes, and every write pays mechanical time.
 
 Not modelled: read cache and read-ahead beyond "sequential costs
-nothing". The 3/4 threshold and the one-for-one turns of
-forced write-back, and the 500 ms age limit, are assumptions; drives
-don't publish theirs.
+nothing". In `hgst-7k8` the 3/4 threshold and the one-for-one turns of
+forced write-back are assumptions, and so is the 500 ms age limit in
+every profile; drives don't publish theirs. `nearline-8t` writes back
+only with no room left and has its turns fitted to drives (below).
 
 Parameters (`kublk add -t hdd ... --<name> <value>`):
 
@@ -86,6 +88,8 @@ Parameters (`kublk add -t hdd ... --<name> <value>`):
 | `--log_us` | ... and per extent logged, plus its media transfer | 0 | 70 (fitted) | 0 |
 | `--wb_idle_ms` | write-back waits this long without a command, unless the cache is full; 0 = starts at once | 0 | 50 (assumed) | 0 |
 | `--wsettle_ms` | added to a seek that ends in a write | 0 | 0.7 (fitted) | 0 |
+| `--wb_turns` | with no room in the cache: write-backs per queued request served, 0 = 1 | 0 | 12 (fitted) | 0 |
+| `--wb_queue` | ... but at most this / requests queued, 0 = no cap | 0 | 64 (fitted) | 0 |
 | `--capacity_gb` | size of the drive the device stands for, 0 = the device's own | 0 | 8000 | 0 |
 | `--ncq` | requests considered for reordering | 32 | 32 | 4 (fitted) |
 | `--wb_window` | write-back considers the N oldest dirty writes, 0 = all | 0 | 0 | 8 (fitted) |
@@ -116,7 +120,10 @@ write settle. Its transfer rate and track length follow the radius from
 inch: the square of the rate falls linearly with the LBA; mean 204.5).
 Fitted to the two ends, the curve gives 238 / 208 / 173 MB/s at 25 / 50
 / 75% where the drives read 251 / 222 / 184: about 6% low. What it does
-not have yet: the drive's preference for writers over readers.
+gives a full cache twelve write-backs per queued read, fewer the more
+reads are queued (64 / reads queued): next to a random writer the
+drives serve about 30 reads a second at any depth from 2 to 8 and more
+only beyond.
 
 `barracuda-2t` is fitted to one real Seagate BarraCuda ST2000DM006 (2 TB
 SATA, 7200 rpm) rather than its spec sheet, which it doesn't meet: random
@@ -164,20 +171,42 @@ writes not yet in place:
 | ... fsync every 64 writes: writes | 424 IOPS | 397-410 |
 | 4K read QD1 next to a write+fsync QD1 job | 45.7 IOPS | 44.0-44.6 |
 | 1M sequential read / write QD1 | 185 / 189 MB/s over the whole 4 GiB device, several times | 259-279 over the first 16 GB; by position 265 / 251 / 222 / 184 / 128 at 0 / 25 / 50 / 75 / 99% (model 265 / 238 / 208 / 173 / 130) |
-| 4K read QD4 next to a 4K random writer QD1 | reads 98, writes 101 IOPS | reads 30-32, writes 309-322 |
-| 4K read QD1 next to a 1M sequential writer QD4 | reads 3 IOPS, writes 152 MB/s | reads 10-12 IOPS (p99 1.5-6 s), writes 187-215 MB/s |
+| 4K read QD4 next to a 4K random writer QD1 | reads 31.5, writes 356 IOPS | reads 30-32, writes 309-322 |
+| 4K read QD1 next to a 1M sequential writer QD4 | reads 3 IOPS, writes 141 MB/s | cache full of small writes, as here: reads 10-12 IOPS (p99 1.5-6 s), writes 187-215 MB/s; from an empty cache: reads 0.3 IOPS (each waits ~6 s), writes 278 MB/s |
 
 The first eight rows are checked by `bench/expect/nearline-8t.tsv`.
 Fitted on separate measurements of the drives (bursts from idle, flush
 time against writes pending): the cache bounds, `--iface_us`, the log
 costs, and `--wsettle_ms` on the sustained whole-drive write rate
 alone. Not fitted, and reproduced on a virtual clock with an 8 TB
-device: sustained 4K writes over 100 GiB and 1 GiB (662 and 1325 IOPS;
-drives 727 and 1104), at QD32 (459; 455), 16K / 64K / 1M writes (450 /
-327 / 107; 444-451 / 262-305 / 95), fast writes after 5 s and 15 s of
-idle (2400 / 5400; 2300-2550 / 5100-5400). The last two rows are what
-the model gets wrong: a drive gives a writer more of the actuator than
-one turn in two.
+device: sustained 4K writes over 100 GiB (669 IOPS; drives 727) and at
+QD32 (459; 455), 16K / 64K / 1M writes (450 / 327 / 107; 444-451 /
+262-305 / 95), fast writes after 5 s and 15 s of idle (2400 / 5400;
+2300-2550 / 5100-5400). Sustained writes confined to 1 GiB are too
+fast (1438; 1104): a write-back on the same track costs the model only
+the rotation.
+
+Readers next to a 4K random writer at QD1, by the readers' queue depth
+(virtual clock, 8 TB; reads / writes per second). `--wb_turns` is
+fitted on QD4 and `--wb_queue` on QD16; the rest is not:
+
+| reader QD | model | real drive |
+|---|---|---|
+| 1 | 27 / 324 | 57 / 220 |
+| 2 | 28.5 / 342 | 27 / 299 |
+| 4 | 30 / 363 | 29 / 297 |
+| 8 | 42 / 336 | 34.5 / 291 |
+| 16 | 69 / 274 | 58 / 239 |
+| 32 | 74 / 146 | 149 / 148 |
+| 4, writer with an fsync per 32 writes | 50 / 228 | 39 / 235 |
+| 4, writer with an fsync per write | 86 / 21 | 83 / 21 |
+
+A lone reader gets twice as much from the drive as from the model, and
+at QD32 the drive is back to one write-back per read where the model
+does two. Next to a sequential stream the model gives a reader a turn
+every half second (the age limit); a drive that starts with an empty
+cache makes it wait about 6 s, one whose cache is full of small writes
+serves ten reads a second.
 
 Calibration of `barracuda-2t` (`bench/calibrate.sh 30 --profile
 barracuda-2t`), against the real ST2000DM006 (fio through NTFS, test file

@@ -177,6 +177,10 @@ static void hdd_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
 			p->max_wait_ms = strtod(v, NULL);
 		else if (!strcmp(k, "--capacity_gb"))
 			p->capacity_gb = strtod(v, NULL);
+		else if (!strcmp(k, "--wb_turns"))
+			p->wb_turns = strtoul(v, NULL, 10);
+		else if (!strcmp(k, "--wb_queue"))
+			p->wb_queue = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--cache_ext"))
 			p->cache_ext = strtoul(v, NULL, 10);
 		else if (!strcmp(k, "--log_ms"))
@@ -209,6 +213,8 @@ static void hdd_usage(const struct ublk_tgt_ops *ops)
 	       "\t     [--cache_ext N (0 = no limit)] [--log_ms X] [--log_us X] "
 	       "[--wb_idle_ms X]\n"
 	       "\t     [--wsettle_ms X] [--capacity_gb X (0 = the device's size)]\n"
+	       "\t     [--wb_turns N (write-backs per queued request, cache full)]\n"
+	       "\t     [--wb_queue N (... at most N / requests queued)]\n"
 	       "\t     [--stroke F] [--seed N] [--stats FILE] "
 	       "BACKING_DEV (use -q 1 -d 32)\n");
 }
